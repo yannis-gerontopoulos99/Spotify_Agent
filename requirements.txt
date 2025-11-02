@@ -3,3 +3,4 @@ dotenv
 langchain
 langgraph
 langchain_google_genai
+google-genai

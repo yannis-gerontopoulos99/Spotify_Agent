@@ -2,6 +2,7 @@ import os
 from dotenv import load_dotenv
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
+import random
 from logger import setup_logger
 
 logger = setup_logger()
@@ -113,14 +114,14 @@ def start_playlist_by_name(playlist_name: str):
         logger.error(f"Error starting playlist '{playlist_name}': {e}")
         return "Error starting playlist"
 
-def start_music():
-    try:
-        sp.start_playback()
-        logger.info("Playback started")
-        return "Playback started"
-    except Exception as e:
-        logger.error(f"Error starting playback: {e}")
-        return "Error starting playback"
+#def start_music():
+#    try:
+#        sp.start_playback()
+#        logger.info("Playback started")
+#        return "Playback started"
+#    except Exception as e:
+#        logger.error(f"Error starting playback: {e}")
+#        return "Error starting playback"
 
 def pause_music():
     try:
@@ -149,9 +150,18 @@ def previous_track():
         logger.error(f"Error going back track: {e}")
         return "Error occurred while going back a track"
 
-def currently_playing():
+#def currently_playing():
+#    try:
+#        current_track = sp.currently_playing() #current_user_playing_track()
+#        logger.info(f"Current track info: {current_track}")
+#        return "Current track info: {current_track}"
+#    except Exception as e:
+#        logger.error(f"Error getting current track info: {e}")
+#        return "Error getting current track info"
+
+def current_user_playing_track():
     try:
-        current_track = sp.currently_playing() #current_user_playing_track()
+        current_track = sp.current_user_playing_track() #current_user_playing_track()
         logger.info(f"Current track info: {current_track}")
         return "Current track info: {current_track}"
     except Exception as e:
@@ -207,4 +217,137 @@ def current_user():
         return "Current user information"
     except Exception as e:
         logger.error(f"Error with current user: {e}")
-        return "Error receving curretn user information"
+        return "Error receiving current user information"
+
+def current_user_followed_artists():
+    try:
+        sp.current_user_followed_artists()
+        logger.info("Info about users following artists")
+        return "User following artists information"
+    except Exception as e:
+        logger.error(f"Error with users following artists: {e}")
+        return "Error receiving users following artists information"
+
+def current_user_playlists():
+    try:
+        sp.current_user_playlists(limit=50)
+        logger.info("Info about users playlists")
+        return "Users playlists"
+    except Exception as e:
+        logger.error(f"Error with users playlists: {e}")
+        return "Error receiving users playlists"
+
+def current_user_recently_played():
+    try:
+        sp.current_user_recently_played(limit=50)
+        logger.info("Info about users recenlty played tracks")
+        return "Users recenlty played tracks"
+    except Exception as e:
+        logger.error(f"Error with users recenlty played tracks: {e}")
+        return "Error receiving users recenlty played tracks"
+
+def current_user_saved_albums():
+    try:
+        sp.current_user_saved_albums(limit=50)
+        logger.info("Info about users saved albums")
+        return "Users saved albums"
+    except Exception as e:
+        logger.error(f"Error with users saved albums: {e}")
+        return "Error receiving users saved albums"
+
+#def current_user_saved_albums_add():
+
+def current_user_saved_tracks():
+    try:
+        sp.current_user_saved_tracks(limit=50)
+        logger.info("Info about users saved tracks")
+        return "Users saved tracks"
+    except Exception as e:
+        logger.error(f"Error with users saved tracks: {e}")
+        return "Error receiving users saved tracks"
+
+def current_user_top_artists():
+    try:
+        sp.current_user_top_artists(limit=50)
+        logger.info("Info about users top artists")
+        return "Users top artists"
+    except Exception as e:
+        logger.error(f"Error with users top artists: {e}")
+        return "Error receiving users top artists"
+
+def current_user_top_tracks():
+    try:
+        sp.current_user_top_tracks(limit=50)
+        logger.info("Info about users top tracks")
+        return "Users top tracks"
+    except Exception as e:
+        logger.error(f"Error with users top tracks: {e}")
+        return "Error receiving users top tracks"
+
+def start_playing_artist(artist_name: str):
+    try:
+        # Step 1. Search for the artist
+        results = sp.search(q=f"artist:{artist_name}", type="artist", limit=1)
+        if not results["artists"]["items"]:
+            return f"No artist found matching '{artist_name}'."
+
+        artist_id = results["artists"]["items"][0]["id"]
+
+        # Step 2. Get the artist's top tracks (most popular songs)
+        top_tracks = sp.artist_top_tracks(artist_id)["tracks"]
+        if not top_tracks:
+            return f"No top tracks found for '{artist_name}'."
+
+        # Step 3. Pick a random one
+        random_track = random.choice(top_tracks)
+        uri = random_track["uri"]
+
+        # Step 4. Start playback
+        sp.start_playback(uris=[uri])
+
+        logger.info(f"Playing random track '{random_track['name']}' by {artist_name}")
+        return f"Playing '{random_track['name']}' by {artist_name}."
+    except Exception as e:
+        logger.error(f"Error playing artist {artist_name}: {e}")
+        return f"Failed to play music by {artist_name}: {e}"
+
+#def recommendation_genre_seeds():
+#    genres = sp.recommendation_genre_seeds()
+#    return genres
+    
+#seed_genres = []
+
+def recommendations(seed_genres: list):
+    try:
+        sp.recommendations(seed_genres=seed_genres)
+        logger.info("Get a list of recommended tracks")
+        return "A list of recommended tracks"
+    except Exception as e:
+        logger.error(f"Error with users recommended tracks: {e}")
+        return "Error receiving users recommended tracks"
+
+def queue():
+    try:
+        sp.queue()
+        logger.info("Get current user's queue")
+        return "Current user's queue"
+    except Exception as e:
+        logger.error(f"Error with users queue: {e}")
+        return "Error receiving users queue"
+
+def start_playback(device_id: str):
+    try:
+        sp.start_playback(device_id= 'a45202ac7cfc3296d3c1442d6be97ae752184403')
+        logger.info("Start playback")
+        return f"Playback starting with device_id"
+    except Exception as e:
+        logger.error(f"Error starting playback: {e}")
+        return "Error receiving users playback"
+
+def devices():
+    try:
+        sp.devices()
+        return "Returning devices"
+    except Exception as e:
+        logger.error(f"Error getting devices: {e}")
+        return "Error receiving devices"
