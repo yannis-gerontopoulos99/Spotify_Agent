@@ -237,12 +237,12 @@ def current_user_top_tracks_tool():
     return current_user_top_tracks()
 
 @tool("devices", return_direct=True)
-def devices_tool(device_id: str = ''):
+def devices_tool():
     """
     Lists all available Spotify playback devices.
     Use when the user asks "what devices are connected" or "where can I play music".
     """
-    return devices(device_id)
+    return devices()
 
 @tool("is_spotify_running", return_direct=True)
 def is_spotify_running_tool():

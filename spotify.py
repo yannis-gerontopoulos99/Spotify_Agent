@@ -161,12 +161,36 @@ def previous_track():
 
 def current_user_playing_track():
     try:
-        current_track = sp.current_user_playing_track() #current_user_playing_track()
-        logger.info(f"Current track info: {current_track}")
-        return "Current track info: {current_track}"
+        current_track = sp.current_user_playing_track()
+        if not current_track or not current_track.get("item"):
+            return "No track is currently playing."
+
+        track_info = current_track["item"]
+
+        # Song info
+        song_name = track_info.get("name")
+        artists = track_info.get("artists", [])
+        artist_names = ", ".join([artist.get("name", "") for artist in artists])
+        album_name = track_info.get("album", {}).get("name")
+        release_date = track_info.get("album", {}).get("release_date")
+        track_url = track_info.get("external_urls", {}).get("spotify")
+
+        # Log the full dictionary for debugging
+        #logger.info(f"Current track info: {track_info}")
+
+        # Return nicely formatted string
+        return (
+            f"Song: {song_name}\n"
+            f"Artist: {artist_names}\n"
+            f"Album: {album_name}\n"
+            f"Release date: {release_date}\n"
+            f"Spotify URL: {track_url}"
+        )
+        
     except Exception as e:
         logger.error(f"Error getting current track info: {e}")
         return "Error getting current track info"
+
 
 def repeat(state: str):
     try:
@@ -305,7 +329,7 @@ def start_playing_artist(artist_name: str):
         # Step 4. Start playback
         sp.start_playback(uris=[uri])
 
-        logger.info(f"Playing random track '{random_track['name']}' by {artist_name}")
+        logger.info(f"Playing track '{random_track['name']}' by {artist_name}")
         return f"Playing '{random_track['name']}' by {artist_name}."
     except Exception as e:
         logger.error(f"Error playing artist {artist_name}: {e}")
@@ -346,8 +370,17 @@ def start_playback(device_id: str):
 
 def devices():
     try:
-        sp.devices()
-        return "Returning devices"
+        results = sp.devices()  # get the actual device data
+        devices = results.get("devices", [])
+        if not devices:
+            return "No devices found."
+        
+        # Format for agent
+        device_list = [
+            f"Device name: {d['name']}, Type: ({d['type']}) - {'Status: Active' if d['is_active'] else 'Inactive'}"
+            for d in devices
+        ]
+        return "\n".join(device_list)
     except Exception as e:
         logger.error(f"Error getting devices: {e}")
-        return "Error receiving devices"
+        return f"Error receiving devices: {e}"

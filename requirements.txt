@@ -1,6 +1,7 @@
 spotipy
 dotenv
-langchain
+langchain==1.0.3
 langgraph
 langchain_google_genai
 google-genai
+deepagents==0.2.4
