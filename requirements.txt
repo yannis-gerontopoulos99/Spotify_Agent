@@ -5,3 +5,6 @@ langgraph
 langchain_google_genai
 google-genai
 deepagents==0.2.4
+langchain_community
+sounddevice
+soundfile

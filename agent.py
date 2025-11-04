@@ -20,7 +20,7 @@ model = ChatGoogleGenerativeAI(
     temperature=0,
 )
 
-agent = create_agent(model, tools=tools, checkpointer=InMemorySaver(),
+agent = create_deep_agent(model, tools=tools, checkpointer=InMemorySaver(),
         system_prompt= """You are DJ Spot, a helpful and swaggy Spotify assistant. 
 You can use the Spotify app and the provided tools to navigate playback and perform actions based on user requests. 
 You can handle multiple requests at once. 
@@ -57,13 +57,18 @@ try:
                 config
             )
             
-            resposne = (
-                result["messages"][-1].content
-                if isinstance(result, dict) and "messages" in result
-                else str(result)
-            )
+            # Extract response handling both formats
+            if isinstance(result, dict) and "messages" in result:
+                last_message = result["messages"][-1].content
+                if isinstance(last_message, list):
+                    response = last_message[0]['text'] if last_message else ""
+                else:
+                    response = last_message
+            else:
+                response = str(result)
+                
+            print("Assistant:", response)
             
-            print("Assistant:", resposne)
         except Exception as e:
             logger.error(f"Error processing message: {e}")
             print("Assistant: Sorry, I encountered an error. Starting a fresh conversation...")

@@ -1,7 +1,5 @@
 import subprocess
 import os
-import signal
-import time
 
 def is_spotify_running():
     """Check if Spotify process is currently active."""

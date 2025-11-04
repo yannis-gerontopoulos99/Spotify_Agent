@@ -10,9 +10,22 @@ from spotify import (add_song_to_queue, find_song_by_name, find_song_by_lyrics, 
                     current_user_top_tracks, queue, start_playback, devices)
 
 from spotify_launcher import (is_spotify_running, launch_spotify, close_spotify)
+from langchain_community.tools import DuckDuckGoSearchRun
 
 load_dotenv()
 device_id = os.getenv("DEVICE_ID")
+
+duckduckgo = DuckDuckGoSearchRun()
+
+@tool("web_search", return_direct=False)
+def web_search_tool(query: str) -> str:
+    """
+    Search the web for up-to-date factual information.
+    Useful for retrieving band member names, biographies, or background info
+    that Spotify's API doesn't include.
+    """
+    results = duckduckgo.run(query)
+    return results
 
 @tool("start_playback", return_direct=True)
 def start_playback_tool(device_id: str = device_id):
@@ -275,7 +288,7 @@ def close_spotify_tool():
 #    """Get user recommendations."""
 #    return recommendations(seed_genres)
 
-spotify_agent_tools = [add_song_to_queue_tool, find_song_by_name_tool, find_song_by_lyrics_tool,
+spotify_agent_tools = [web_search_tool, add_song_to_queue_tool, find_song_by_name_tool, find_song_by_lyrics_tool,
                         add_song_to_queue_by_song_name_tool, add_song_to_queue_by_lyrics_tool,
                         start_playing_song_by_name_tool, start_playing_song_by_lyrics_tool,
                         start_playlist_by_name_tool, pause_music_tool,
