@@ -5,3 +5,4 @@ logs
 .cache
 test.py
 agent_audio.py
+temp_recording.wav

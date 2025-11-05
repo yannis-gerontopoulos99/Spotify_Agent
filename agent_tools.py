@@ -7,9 +7,9 @@ from spotify import (add_song_to_queue, find_song_by_name, find_song_by_lyrics, 
                     current_user_playing_track, repeat, shuffle, seek_track, current_user,
                     current_user_followed_artists, current_user_playlists, current_user_recently_played,
                     current_user_saved_albums, current_user_saved_tracks, current_user_top_artists,
-                    current_user_top_tracks, queue, start_playback, devices)
+                    current_user_top_tracks, queue, start_playback, devices,
+                    is_spotify_running, launch_spotify, close_spotify)
 
-from spotify_launcher import (is_spotify_running, launch_spotify, close_spotify)
 from langchain_community.tools import DuckDuckGoSearchRun
 
 load_dotenv()
@@ -32,7 +32,7 @@ def start_playback_tool(device_id: str = device_id):
     """
     Starts or resumes Spotify playback on the user's active device.
 
-    Use this tool when the user requests to play or resume music or podcasts.
+    Use this tool when the user requests to play, start or resume music or podcasts.
     If no device_id is provided, the default active device will be used.
 
     Args:
@@ -185,9 +185,11 @@ def start_playing_song_by_lyrics_tool(lyrics: str):
 @tool("start_playlist_by_name", return_direct=True)
 def start_playlist_by_name_tool(playlist_name: str):
     """
-    Starts playing a Spotify playlist by its name.
+    Starts playing a Spotify playlist by its name, genre or artist name.
 
     Use when the user says "play my [playlist name] playlist".
+    Use when the user says "play a playlist with [artist_name]".
+    Use when the user says "play a [genre] playlist".
     """
     return start_playlist_by_name(playlist_name)
 

@@ -1,4 +1,7 @@
 import os
+import time
+import subprocess
+from spotipy.exceptions import SpotifyException
 from dotenv import load_dotenv
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
@@ -8,6 +11,8 @@ from logger import setup_logger
 logger = setup_logger()
 
 load_dotenv()
+
+device_id = os.getenv("DEVICE_ID")
 
 client_id = os.getenv("SPOTIFY_CLIENT_ID")
 client_secret = os.getenv("SPOTIFY_CLIENT_SECRET")
@@ -20,9 +25,19 @@ sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=client_id,
 
 def add_song_to_queue(song_uri: str):
     try:
+        # Extract track ID from URI (format: spotify:track:TRACK_ID)
+        track_id = song_uri.split(':')[-1]
+        
+        # Get track details
+        track_info = sp.track(track_id)
+        song_name = track_info['name']
+        artists = ', '.join([artist['name'] for artist in track_info['artists']])
+        
+        # Add to queue
         sp.add_to_queue(song_uri)
-        #logger.info(f"Added track to queue: {song_uri}")
-        return "Added track to queue successfully"
+        
+        #logger.info(f"Added to queue: {artists} - {song_name}")
+        return f"Added to queue: {artists} - {song_name}"
     except Exception as e:
         logger.error(f"Error adding track to queue: {e}")
         return "Error adding track to queue"
@@ -101,15 +116,34 @@ def start_playing_song_by_lyrics(lyrics: str):
 
 def start_playlist_by_name(playlist_name: str):
     try:
-        results = sp.search(q=playlist_name, type='playlist', limit=1)
-        if results and results['playlists']['items']:
-            playlist_uri = results['playlists']['items'][0]['uri']
+        search_queries = [
+            playlist_name,
+            f"{playlist_name} playlist",
+            f"This Is {playlist_name}",
+        ]
+        
+        playlist_uri = None
+        playlist_title = None
+        
+        for query in search_queries:
+            results = sp.search(q=query, type='playlist', limit=1)
+            # Check if results exist and have items
+            if results and results.get('playlists') and results['playlists'].get('items'):
+                items = results['playlists']['items']
+                if len(items) > 0:  # Extra safety check
+                    playlist = items[0]
+                    playlist_uri = playlist['uri']
+                    playlist_title = playlist['name']
+                    break
+        
+        if playlist_uri and playlist_title:  # Both must exist
             sp.start_playback(context_uri=playlist_uri)
-            #logger.info(f"Started playlist '{playlist_name}' -> {playlist_uri}")
-            return f"Playlist started: {playlist_name}"
+            logger.info(f"Started playlist '{playlist_title}' (searched: '{playlist_name}') -> {playlist_uri}")
+            return f"Started playlist: {playlist_title}"
         else:
             logger.warning(f"Playlist not found: {playlist_name}")
-            return "Playlist not found"
+            return f"No playlist found for '{playlist_name}'. Try being more specific."
+            
     except Exception as e:
         logger.error(f"Error starting playlist '{playlist_name}': {e}")
         return "Error starting playlist"
@@ -361,12 +395,35 @@ def queue():
 
 def start_playback(device_id: str):
     try:
-        sp.start_playback(device_id= 'a45202ac7cfc3296d3c1442d6be97ae752184403')
+        sp.start_playback(device_id=device_id)
         #logger.info("Start playback")
         return f"Playback starting with device_id"
-    except Exception as e:
+    except SpotifyException as e:
         logger.error(f"Error starting playback: {e}")
-        return "Error receiving users playback"
+        
+        if e.http_status == 404:
+            print("Device not found. Launching Spotify...")
+            launch_spotify()
+            time.sleep(15)
+            
+            # Retry up to 2 times
+            for attempt in range(2):
+                try:
+                    sp.start_playback(device_id=device_id)
+                    print("Playback started after launching Spotify.")
+                    return "Playback started successfully after launching Spotify"
+                except SpotifyException as e2:
+                    print(f"Retry attempt {attempt + 1} failed ({e2.http_status}): {e2}")
+                    logger.error(f"Retry attempt {attempt + 1} failed: {e2}")
+                    if attempt < 1:  # If not the last attempt, wait before retrying
+                        print(f"Waiting 5 seconds before retry {attempt + 2}...")
+                        time.sleep(5)
+                    else:
+                        print("All retry attempts exhausted.")
+                        return "Error receiving users playback after multiple attempts"
+        else:
+            print(f"Spotify error ({e.http_status}): {e}")
+            return "Error receiving users playback"
 
 def devices():
     try:
@@ -384,3 +441,39 @@ def devices():
     except Exception as e:
         logger.error(f"Error getting devices: {e}")
         return f"Error receiving devices: {e}"
+
+def is_spotify_running():
+    """Check if Spotify process is currently active."""
+    result = subprocess.run(["pgrep", "-f", "/snap/bin/spotify"], stdout=subprocess.PIPE)
+    return result.returncode == 0
+
+def launch_spotify():
+    """
+    Launch Spotify.
+    - detach=True: Spotify stays open after script ends
+    - detach=False: tied to this script
+    """
+    if is_spotify_running():
+        print("Spotify is already running.")
+        return None
+    try:
+        process = subprocess.Popen(["/snap/bin/spotify"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                preexec_fn=os.setpgrp  # detaches Spotify from the script
+                )
+        return "Spotify launched."
+    except Exception as e:
+        print(f"Error opening Spotify: {e}")
+
+
+def close_spotify():
+    """
+    Close Spotify gracefully if it's running.
+    Uses pkill (simplest, safe for Snap version).
+    """
+    try:
+        subprocess.run(["pkill", "-f", "spotify"], check=False)
+        return "Spotify closed."
+    except Exception as e:
+        print(f"Error closing Spotify: {e}")
