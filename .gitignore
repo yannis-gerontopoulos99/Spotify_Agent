@@ -4,5 +4,6 @@ env
 logs
 .cache
 test.py
+test_2.py
 agent_audio.py
 temp_recording.wav

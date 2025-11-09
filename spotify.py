@@ -23,6 +23,38 @@ sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=client_id,
 
 # Spotify functions
 
+def launch_spotify_before_agent():
+    """
+    Pre-agent function to ensure Spotify device is ready.
+    Prompts user for device selection if needed.
+    """
+    try:
+        # Get available devices
+        devices_response = sp.devices()
+        devices = devices_response.get('devices', [])
+        
+        if not devices:
+            print("No active devices found.")
+            use_default = input("Should default device be used? (y/n): ").strip().lower()
+            if use_default == 'y':
+                launch_spotify()
+                print("Spotify launching...")
+            else:
+                choice = input("Provide a device_id of your liking else tpye 'q' to quit. ").strip().lower()
+                if choice == "q":
+                    print("Exiting...")
+                    return None
+                else:
+                    print("Evaluating device_id given..")
+                    if choice == device_id:
+                        print("Id given is equal to defualt one.")
+                        launch_spotify()
+                    else:
+                        print(f"Using id {choice}...")
+                        sp.start_playback(device_id = choice)
+    except Exception as e:
+        logger.error(f"Error initializing Spotify: {e}")    
+
 def add_song_to_queue(song_uri: str):
     try:
         # Extract track ID from URI (format: spotify:track:TRACK_ID)
@@ -120,26 +152,38 @@ def start_playlist_by_name(playlist_name: str):
             playlist_name,
             f"{playlist_name} playlist",
             f"This Is {playlist_name}",
+            f"{playlist_name} Mix",
         ]
         
         playlist_uri = None
         playlist_title = None
+        playlist_owner = None
+        playlist_track_count = None
         
         for query in search_queries:
-            results = sp.search(q=query, type='playlist', limit=1)
+            results = sp.search(q=query, type='playlist', limit=3)
+            
             # Check if results exist and have items
             if results and results.get('playlists') and results['playlists'].get('items'):
                 items = results['playlists']['items']
-                if len(items) > 0:  # Extra safety check
-                    playlist = items[0]
-                    playlist_uri = playlist['uri']
-                    playlist_title = playlist['name']
+                
+                # Loop through items to find the first non-None playlist
+                for playlist in items:
+                    if playlist is not None:
+                        playlist_uri = playlist['uri']
+                        playlist_title = playlist['name']
+                        playlist_owner = playlist.get('owner', {}).get('display_name', 'Unknown')
+                        playlist_track_count = playlist.get('tracks', {}).get('total', 0)
+                        break
+                
+                # If we found a valid playlist, stop searching
+                if playlist_uri and playlist_title:
                     break
         
-        if playlist_uri and playlist_title:  # Both must exist
+        if playlist_uri and playlist_title:
             sp.start_playback(context_uri=playlist_uri)
-            logger.info(f"Started playlist '{playlist_title}' (searched: '{playlist_name}') -> {playlist_uri}")
-            return f"Started playlist: {playlist_title}"
+            logger.info(f"Started playlist '{playlist_title}' by {playlist_owner} ({playlist_track_count} tracks) -> {playlist_uri}")
+            return f"Started playlist: {playlist_title} by {playlist_owner} ({playlist_track_count} tracks)"
         else:
             logger.warning(f"Playlist not found: {playlist_name}")
             return f"No playlist found for '{playlist_name}'. Try being more specific."
