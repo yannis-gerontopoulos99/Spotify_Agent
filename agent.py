@@ -14,9 +14,12 @@ load_dotenv()
 
 def main():
     # Run Spotify initialization first
-    launch_spotify_before_agent()
+    result = launch_spotify_before_agent()
     
-    # If we got here, Spotify is ready - continue with agent
+    if result is None:
+        return
+    
+    # Continue with agent
     api_key = os.getenv("GOOGLE_API_KEY")
     tools = spotify_agent_tools
     model = ChatGoogleGenerativeAI(

@@ -29,31 +29,69 @@ def launch_spotify_before_agent():
     Prompts user for device selection if needed.
     """
     try:
-        # Get available devices
         devices_response = sp.devices()
         devices = devices_response.get('devices', [])
-        
+
         if not devices:
             print("No active devices found.")
             use_default = input("Should default device be used? (y/n): ").strip().lower()
             if use_default == 'y':
                 launch_spotify()
                 print("Spotify launching...")
+                return True
             else:
-                choice = input("Provide a device_id of your liking else tpye 'q' to quit. ").strip().lower()
+                choice = input("Provide a device_id of your liking or type 'q' to quit: ").strip().lower()
                 if choice == "q":
                     print("Exiting...")
                     return None
                 else:
-                    print("Evaluating device_id given..")
+                    print("Evaluating device_id given...")
                     if choice == device_id:
-                        print("Id given is equal to defualt one.")
+                        print("ID given is equal to default one.")
                         launch_spotify()
+                        return True
                     else:
-                        print(f"Using id {choice}...")
-                        sp.start_playback(device_id = choice)
+                        print(f"Using ID {choice}...")
+                        try:
+                            sp.start_playback(device_id=choice)
+                            return True
+                        except SpotifyException as e:
+                            if e.http_status == 404:
+                                raise ValueError(f"Device ID '{choice}' not found. Please check and try again.") from e
+                            else:
+                                raise  # re-raise other Spotify errors
+        else:
+            active_device = next((d for d in devices if d.get('is_active')), None)
+            if active_device:
+                print(f"Active device name: {active_device['name']} - ID: {active_device['id']}")
+                print("Starting playback")
+                sp.start_playback(device_id=active_device['id'])
+                return True
+            else:
+                print("No active device found.\nListing all devices:")
+                for i, d in enumerate(devices, start=1):
+                    print(f"{i}. Name: {d['name']} | Type: {d['type']} | ID: {d['id']}")
+                
+                while True:
+                    choice = input("\nEnter the number of the device you want to use (or 'q' to quit): ").strip().lower()
+                    if choice == "q":
+                        print("Exiting...")
+                        return None
+                    try:
+                        choice_idx = int(choice) - 1
+                        if 0 <= choice_idx < len(devices):
+                            selected_device = devices[choice_idx]
+                            print(f"Starting playback on: {selected_device['name']} (ID: {selected_device['id']})")
+                            sp.start_playback(device_id=selected_device['id'])
+                            return True
+                        else:
+                            print(f"Invalid number. Please enter a number between 1 and {len(devices)}.")
+                    except ValueError:
+                        print("Invalid input. Please enter a valid number or 'q' to quit.")
+
     except Exception as e:
-        logger.error(f"Error initializing Spotify: {e}")    
+        logger.error(f"Error initializing Spotify: {e}")
+        return None
 
 def add_song_to_queue(song_uri: str):
     try:
@@ -76,68 +114,103 @@ def add_song_to_queue(song_uri: str):
 
 def find_song_by_name(name: str):
     try:
-        results = sp.search(q=name, type='track')
-        if results:
-            song_uri = results['tracks']['items'][0]['uri']
-            #logger.info(f"Found song '{name}' -> URI: {song_uri}")
-            return song_uri
-        else:
-            logger.warning(f"No tracks found for name: {name}")
+        results = sp.search(q=name, type='track', limit=1)
+        tracks = results.get('tracks', {}).get('items', [])
+
+        if not tracks:
+            print(f"No tracks found for name: '{name}'")
             return None
+
+        track = tracks[0]
+        song_uri = track['uri']
+        track_id = song_uri.split(':')[-1]
+        song_name = track['name']
+        artists = ", ".join(artist['name'] for artist in track['artists'])
+
+        print(f"Found: '{song_name}' by {artists}")
+        print(f"URI: {track_id}")
+
+        return (song_uri, song_name)
+
     except Exception as e:
         logger.error(f"Error finding song by name '{name}': {e}")
         return None
 
 def find_song_by_lyrics(lyrics: str):
     try:
-        results = sp.search(q=f"lyrics:{lyrics}", type='track')
-        if results and results['tracks']['items']:
-            song_uri = results['tracks']['items'][0]['uri']
-            #logger.info(f"Found song with lyrics '{lyrics}' -> URI: {song_uri}")
-            return song_uri
-        else:
+        results = sp.search(q=f"lyrics:{lyrics}", type='track', limit=1)
+        tracks = results.get('tracks', {}).get('items', [])
+
+        if not tracks:
             logger.warning(f"No matching tracks found for lyrics: {lyrics}")
             return None
+
+        track = tracks[0]
+        song_uri = track['uri']
+        track_id = song_uri.split(':')[-1]
+        song_name = track['name']
+        song_artist = ", ".join(artist['name'] for artist in track['artists'])
+
+        print(f"Found song '{song_name}' with lyrics '{lyrics}' | Artist: {song_artist} | URI: {track_id}")
+        return song_uri
+
     except Exception as e:
         logger.error(f"Error finding song by lyrics '{lyrics}': {e}")
         return None
 
 def add_song_to_queue_by_song_name(song_name: str):
-    song_uri = find_song_by_name(song_name)
-    if song_uri:
-        return add_song_to_queue(song_uri)
-    else:
+    result = find_song_by_name(song_name)
+    if not result:
         logger.warning(f"No matching track found for song name: {song_name}")
         return "No matching tracks found"
+
+    song_uri, track_display_name = result
+
+    try:
+        add_song_to_queue(song_uri) 
+        msg = f"Added to queue: {track_display_name}"
+        #print(msg)
+        return msg
+    except Exception as e:
+        logger.error(f"Unexpected error adding '{track_display_name}' to queue: {e}")
+        return f"Unexpected error: {e}"
 
 def add_song_to_queue_by_lyrics(lyrics: str):
     song_uri = find_song_by_lyrics(lyrics)
     if song_uri:
-        return add_song_to_queue(song_uri)
+        add_song_to_queue(song_uri)
+
+        # Fetch song details using the Spotify API
+        track_info = sp.track(song_uri)
+        track_name = track_info['name']
+        artist_name = ", ".join(artist['name'] for artist in track_info['artists'])
+
+        #print(f"Added to queue: {track_name} — {artist_name}")
+        return (f"Added to queue: {track_name} — {artist_name}")
     else:
         logger.warning(f"No matching track found for lyrics: {lyrics}")
         return "No matching tracks found"
 
 def start_playing_song_by_name(song_name: str):
-    song_uri = find_song_by_name(song_name)
-    if song_uri:
+    result = find_song_by_name(song_name)
+    if result:
+        song_uri, track_display_name = result
         try:
             sp.start_playback(uris=[song_uri])
-            #logger.info(f"Started playing song '{song_name}'")
-            return f"Started playing song {song_name}"
+            print(f"Now playing: {track_display_name}")
+            return f"Started playing: {track_display_name}"
         except Exception as e:
             logger.error(f"Error starting playback for '{song_name}': {e}")
-            return f"Couldn't play song. Error"
+            return "Couldn't play song. Error."
     else:
         logger.warning(f"Song not found: {song_name}")
-        return f"Couldn't play song. Not found."
+        return "Couldn't play song. Not found."
 
 def start_playing_song_by_lyrics(lyrics: str):
     song_uri = find_song_by_lyrics(lyrics)
     if song_uri:
         try:
             sp.start_playback(uris=[song_uri])
-            #logger.info(f"Started playing song with lyrics '{lyrics}'")
             return f"Started playing song with lyrics: {lyrics}"
         except Exception as e:
             logger.error(f"Error starting playback for lyrics '{lyrics}': {e}")
@@ -192,19 +265,9 @@ def start_playlist_by_name(playlist_name: str):
         logger.error(f"Error starting playlist '{playlist_name}': {e}")
         return "Error starting playlist"
 
-#def start_music():
-#    try:
-#        sp.start_playback()
-#        logger.info("Playback started")
-#        return "Playback started"
-#    except Exception as e:
-#        logger.error(f"Error starting playback: {e}")
-#        return "Error starting playback"
-
 def pause_music():
     try:
         sp.pause_playback()
-        #logger.info("Playback paused")
         return "Playback paused"
     except Exception as e:
         logger.error(f"Error pausing playback: {e}")
@@ -213,7 +276,6 @@ def pause_music():
 def next_track():
     try:
         sp.next_track()
-        #logger.info("Skipped to next track")
         return "Successfully skipped to the next track"
     except Exception as e:
         logger.error(f"Error skipping track: {e}")
@@ -222,20 +284,10 @@ def next_track():
 def previous_track():
     try:
         sp.previous_track()
-        #logger.info("Went back to previous track")
         return "Successfully went back to the previous track"
     except Exception as e:
         logger.error(f"Error going back track: {e}")
         return "Error occurred while going back a track"
-
-#def currently_playing():
-#    try:
-#        current_track = sp.currently_playing() #current_user_playing_track()
-#        logger.info(f"Current track info: {current_track}")
-#        return "Current track info: {current_track}"
-#    except Exception as e:
-#        logger.error(f"Error getting current track info: {e}")
-#        return "Error getting current track info"
 
 def current_user_playing_track():
     try:
@@ -252,9 +304,6 @@ def current_user_playing_track():
         album_name = track_info.get("album", {}).get("name")
         release_date = track_info.get("album", {}).get("release_date")
         track_url = track_info.get("external_urls", {}).get("spotify")
-
-        # Log the full dictionary for debugging
-        #logger.info(f"Current track info: {track_info}")
 
         # Return nicely formatted string
         return (
@@ -274,15 +323,12 @@ def repeat(state: str):
     try:
         if state == 'track':
             sp.repeat(state='track')
-            #logger.info("This track will be repeated")
             return "This track will be repeated"
         elif state == 'context':
             sp.repeat(state='context')
-            #logger.info("All tracks will be repeated")
             return "All tracks will be repeated"
         else:
             sp.repeat(state='off')
-            #logger.info("Repeat is off")
             return "Repeat is off"
     except Exception as e:
         logger.error(f"Error repating tracks: {e}")
@@ -292,11 +338,9 @@ def shuffle(state: bool):
     try:
         if state == True:
             sp.shuffle(state=True)
-            #logger.info("Track shuffling is on")
             return "Track shuffling is on"
         else:
             sp.shuffle(state=False)
-            #logger.info("Track shuffling is off")
             return "Track shuffling is off"
     except Exception as e:
         logger.error(f"Error shuffling tracks: {e}")
@@ -306,29 +350,63 @@ def seek_track(position_ms: int):
     try:
         if position_ms:
             sp.seek_track(position_ms)
-            #logger.info(f"Track moved to {position_ms} ms")
             return f"Track moved to {position_ms} ms"
     except Exception as e:
         logger.error(f"Error moving track: {e}")
         return(f"Error moving track to {position_ms} ms")
 
 def current_user():
+    """
+    Fetch the current Spotify user's information and return as a dictionary.
+    """
     try:
-        sp.current_user()
-        #logger.info("Info about current user")
-        return "Current user information"
-    except Exception as e:
-        logger.error(f"Error with current user: {e}")
-        return "Error receiving current user information"
+        user_info = sp.current_user()
+        
+        # Build structured dictionary similar to your example
+        result = {
+            "display_name": user_info.get("display_name"),
+            "external_urls": user_info.get("external_urls", {}),
+            "followers": user_info.get("followers", {}),
+            "href": user_info.get("href"),
+            "id": user_info.get("id"),
+            "images": user_info.get("images", []),
+            "type": user_info.get("type"),
+            "uri": user_info.get("uri")
+        }
+        return result
 
-def current_user_followed_artists():
-    try:
-        sp.current_user_followed_artists()
-        #logger.info("Info about users following artists")
-        return "User following artists information"
     except Exception as e:
-        logger.error(f"Error with users following artists: {e}")
-        return "Error receiving users following artists information"
+        logger.error(f"Error fetching current user info: {e}")
+        return {"error": "Error receiving current user information"}
+
+
+def current_user_followed_artists(limit: int = 20):
+    """
+    Fetch and print the current user's followed artists.
+    Returns the list of artists.
+    """
+    try:
+        # Spotify API requires 'type=artist'
+        response = sp.current_user_followed_artists(limit=limit)
+        artists = response.get('artists', {}).get('items', [])
+
+        if not artists:
+            print("User is not following any artists.")
+            return []
+
+        print(f"User is following {len(artists)} artists (showing up to {limit}):")
+        artist_list = []
+        for i, artist in enumerate(artists, start=1):
+            name = artist.get('name')
+            artist_list.append(name)
+            print(f"{i}. {name}")
+
+        return artist_list
+
+    except Exception as e:
+        logger.error(f"Error fetching followed artists: {e}")
+        return None
+
 
 def current_user_playlists():
     try:
@@ -437,6 +515,15 @@ def queue():
         logger.error(f"Error with users queue: {e}")
         return "Error receiving users queue"
 
+def start_playback():
+    try:
+        sp.start_playback(device_id=device_id)
+        #logger.info("Start playback")
+        return f"Playback started"
+    except SpotifyException as e:
+        logger.error(f"Error starting playback: {e}")
+
+'''
 def start_playback(device_id: str):
     try:
         sp.start_playback(device_id=device_id)
@@ -468,7 +555,7 @@ def start_playback(device_id: str):
         else:
             print(f"Spotify error ({e.http_status}): {e}")
             return "Error receiving users playback"
-
+'''
 def devices():
     try:
         results = sp.devices()  # get the actual device data
@@ -478,7 +565,7 @@ def devices():
         
         # Format for agent
         device_list = [
-            f"Device name: {d['name']}, Type: ({d['type']}) - {'Status: Active' if d['is_active'] else 'Inactive'}"
+            f"Device name: {d['name']} - Id: {d['id']}, Type: ({d['type']}) - {'Status: Active' if d['is_active'] else 'Inactive'}"
             for d in devices
         ]
         return "\n".join(device_list)

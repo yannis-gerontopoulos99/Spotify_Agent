@@ -28,7 +28,7 @@ def web_search_tool(query: str) -> str:
     return results
 
 @tool("start_playback", return_direct=True)
-def start_playback_tool(device_id: str = device_id):
+def start_playback_tool(device_id: str):
     """
     Starts or resumes Spotify playback on the user's active device.
 
@@ -41,7 +41,7 @@ def start_playback_tool(device_id: str = device_id):
     Returns:
         str: Confirmation that playback has started.
     """
-    return start_playback(device_id)
+    return start_playback(device_id=device_id)
 
 @tool("pause_music", return_direct=True)
 def pause_music_tool():
@@ -146,23 +146,23 @@ def add_song_to_queue_by_lyrics_tool(lyrics: str):
     """
     return add_song_to_queue_by_lyrics(lyrics)
 
-@tool("find_song_by_name", return_direct=True)
-def find_song_by_name_tool(name: str):
-    """
-    Searches for a song on Spotify by name and returns its URI.
+#@tool("find_song_by_name", return_direct=True)
+#def find_song_by_name_tool(name: str):
+#    """
+#    Searches for a song on Spotify by name and returns its URI.
+#
+#    Use when the user asks for a song title, e.g., "find 'Bohemian Rhapsody'".
+#    """
+#    return find_song_by_name(name)
 
-    Use when the user asks for a song title, e.g., "find 'Bohemian Rhapsody'".
-    """
-    return find_song_by_name(name)
-
-@tool("find_song_by_lyrics", return_direct=True)
-def find_song_by_lyrics_tool(lyrics: str):
-    """
-    Searches Spotify for a song based on its lyrics.
-
-    Use when the user provides a lyric fragment to identify a song.
-    """
-    return find_song_by_lyrics(lyrics)
+#@tool("find_song_by_lyrics", return_direct=True)
+#def find_song_by_lyrics_tool(lyrics: str):
+#    """
+#    Searches Spotify for a song based on its lyrics.
+#
+#    Use when the user provides a lyric fragment to identify a song.
+#    """
+#    return find_song_by_lyrics(lyrics)
 
 @tool("start_playing_song_by_name", return_direct=True)
 def start_playing_song_by_name_tool(song_name: str):
@@ -290,7 +290,7 @@ def close_spotify_tool():
 #    """Get user recommendations."""
 #    return recommendations(seed_genres)
 
-spotify_agent_tools = [web_search_tool, add_song_to_queue_tool, find_song_by_name_tool, find_song_by_lyrics_tool,
+spotify_agent_tools = [web_search_tool, add_song_to_queue_tool, #find_song_by_name_tool, find_song_by_lyrics_tool,
                         add_song_to_queue_by_song_name_tool, add_song_to_queue_by_lyrics_tool,
                         start_playing_song_by_name_tool, start_playing_song_by_lyrics_tool,
                         start_playlist_by_name_tool, pause_music_tool,
