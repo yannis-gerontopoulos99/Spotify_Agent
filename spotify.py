@@ -18,8 +18,19 @@ client_id = os.getenv("SPOTIFY_CLIENT_ID")
 client_secret = os.getenv("SPOTIFY_CLIENT_SECRET")
 redirect_uri = os.getenv("SPOTIFY_REDIRECT_URI")
 
+scope=(
+            "user-follow-read "
+            "playlist-read-private "
+            "playlist-read-collaborative "
+            "user-read-playback-state "
+            "user-modify-playback-state "
+            "user-read-recently-played "
+            "user-library-read "
+        )
+
 sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=client_id,
-                    client_secret=client_secret, redirect_uri=redirect_uri))
+                    client_secret=client_secret, redirect_uri=redirect_uri,
+                    scope=scope))
 
 # Spotify functions
 
@@ -37,6 +48,7 @@ def launch_spotify_before_agent():
             use_default = input("Should default device be used? (y/n): ").strip().lower()
             if use_default == 'y':
                 launch_spotify()
+                #sp.start_playback(device_id=device_id)
                 print("Spotify launching...")
                 return True
             else:
@@ -49,6 +61,7 @@ def launch_spotify_before_agent():
                     if choice == device_id:
                         print("ID given is equal to default one.")
                         launch_spotify()
+                        #sp.start_playback(device_id=device_id)
                         return True
                     else:
                         print(f"Using ID {choice}...")
@@ -357,83 +370,207 @@ def seek_track(position_ms: int):
 
 def current_user():
     """
-    Fetch the current Spotify user's information and return as a dictionary.
+    Fetch the current Spotify user's information and return as a formatted string.
     """
     try:
         user_info = sp.current_user()
         
-        # Build structured dictionary similar to your example
-        result = {
-            "display_name": user_info.get("display_name"),
-            "external_urls": user_info.get("external_urls", {}),
-            "followers": user_info.get("followers", {}),
-            "href": user_info.get("href"),
-            "id": user_info.get("id"),
-            "images": user_info.get("images", []),
-            "type": user_info.get("type"),
-            "uri": user_info.get("uri")
-        }
-        return result
-
+        display_name = user_info.get("display_name", "Unknown")
+        user_id = user_info.get("id", "Unknown")
+        user_type = user_info.get("type", "Unknown")
+        followers = user_info.get("followers", {}).get("total", 0)
+        spotify_url = user_info.get("external_urls", {}).get("spotify", "N/A")
+        images = user_info.get("images", [])
+        #image_urls = ", ".join(img.get("url") for img in images) if images else "No images"
+        
+        # Return formatted string
+        return (
+            f"User: {display_name}\n"
+            f"ID: {user_id}\n"
+            f"Type: {user_type}\n"
+            f"Followers: {followers}\n"
+            f"Spotify URL: {spotify_url}\n"
+            #f"Images: {image_urls}"
+        )
+        
     except Exception as e:
         logger.error(f"Error fetching current user info: {e}")
-        return {"error": "Error receiving current user information"}
+        return "Error receiving current user information"
 
-
-def current_user_followed_artists(limit: int = 20):
+def current_user_followed_artists():
     """
-    Fetch and print the current user's followed artists.
-    Returns the list of artists.
+    Fetch and return the current user's followed artists as a formatted string.
     """
     try:
-        # Spotify API requires 'type=artist'
-        response = sp.current_user_followed_artists(limit=limit)
-        artists = response.get('artists', {}).get('items', [])
+        after = None
+        all_artists = []
 
-        if not artists:
-            print("User is not following any artists.")
-            return []
+        while True:
+            result = sp.current_user_followed_artists(limit=50, after=after)
+            items = result["artists"]["items"]
 
-        print(f"User is following {len(artists)} artists (showing up to {limit}):")
-        artist_list = []
-        for i, artist in enumerate(artists, start=1):
-            name = artist.get('name')
-            artist_list.append(name)
-            print(f"{i}. {name}")
+            # Collect artists
+            for item in items:
+                all_artists.append({
+                    "id": item["id"],
+                    "name": item["name"],
+                    "followers": item["followers"]["total"]
+                })
 
-        return artist_list
+            # Get cursor for next page
+            after = result["artists"]["cursors"].get("after")
+            if after is None:
+                break  # No more pages
+
+        if not all_artists:
+            return "You are not following any artists."
+
+        # Build formatted string
+        formatted_artists = []
+        for i, artist in enumerate(all_artists, start=1):
+            formatted_artists.append(
+                f"{i}. {artist['name']} (ID: {artist['id']}) — Followers: {artist['followers']}"
+            )
+
+        return "Followed Artists:\n" + "\n".join(formatted_artists)
 
     except Exception as e:
         logger.error(f"Error fetching followed artists: {e}")
-        return None
+        return "Error receiving artists."
 
-
-def current_user_playlists():
+def current_user_playlists(limit: int = 50):
+    """
+    Fetch and return the current user's playlists as a formatted string.
+    """
     try:
-        sp.current_user_playlists(limit=50)
-        #logger.info("Info about users playlists")
-        return "Users playlists"
-    except Exception as e:
-        logger.error(f"Error with users playlists: {e}")
-        return "Error receiving users playlists"
+        offset = 0
+        all_playlists = []
 
-def current_user_recently_played():
-    try:
-        sp.current_user_recently_played(limit=50)
-        #logger.info("Info about users recenlty played tracks")
-        return "Users recenlty played tracks"
-    except Exception as e:
-        logger.error(f"Error with users recenlty played tracks: {e}")
-        return "Error receiving users recenlty played tracks"
+        while True:
+            results = sp.current_user_playlists(limit=limit, offset=offset)
+            items = results["items"]
 
-def current_user_saved_albums():
-    try:
-        sp.current_user_saved_albums(limit=50)
-        #logger.info("Info about users saved albums")
-        return "Users saved albums"
+            # Collect playlists
+            for pl in items:
+                all_playlists.append({
+                    "id": pl["id"],
+                    "name": pl["name"],
+                    "tracks": pl["tracks"]["total"],
+                    "owner": pl["owner"]["display_name"]
+                })
+
+            # Check if fewer than 'limit' items → done
+            if len(items) < limit:
+                break
+
+            offset += limit
+
+        if not all_playlists:
+            return "You have no playlists."
+
+        # Build formatted string
+        formatted_playlists = []
+        for i, pl in enumerate(all_playlists, start=1):
+            formatted_playlists.append(
+                f"{i}. {pl['name']} (ID: {pl['id']}) — Owner: {pl['owner']}, Tracks: {pl['tracks']}"
+            )
+
+        return "Your Playlists:\n" + "\n".join(formatted_playlists)
+
     except Exception as e:
-        logger.error(f"Error with users saved albums: {e}")
-        return "Error receiving users saved albums"
+        logger.error(f"Error fetching playlists: {e}")
+        return "Error receiving playlists."
+
+def current_user_recently_played(limit: int = 10, after: int = None, before: int = None):
+    """
+    Fetch and return the current user's recently played tracks as a formatted string.
+    
+    Parameters:
+        limit (int): Number of tracks to return (max 50 per Spotify API)
+        after (int): Unix timestamp in milliseconds to return tracks played after
+        before (int): Unix timestamp in milliseconds to return tracks played before
+    """
+    try:
+        results = sp.current_user_recently_played(limit=limit, after=after, before=before)
+        items = results.get("items", [])
+
+        if not items:
+            return "No recently played tracks found."
+
+        formatted_tracks = []
+        for i, item in enumerate(items, start=1):
+            track = item.get("track", {})
+            track_name = track.get("name", "Unknown")
+            artists = ", ".join([artist["name"] for artist in track.get("artists", [])])
+            album = track.get("album", {}).get("name", "Unknown")
+            played_at = item.get("played_at", "Unknown time")
+            track_url = track.get("external_urls", {}).get("spotify", "N/A")
+
+            formatted_tracks.append(
+                f"{i}. '{track_name}' by {artists} — Album: {album} — Played at: {played_at}\n   Spotify URL: {track_url}"
+            )
+
+        return "Recently Played Tracks:\n" + "\n".join(formatted_tracks)
+
+    except Exception as e:
+        logger.error(f"Error fetching recently played tracks: {e}")
+        return "Error receiving recently played tracks."
+
+def current_user_saved_albums(limit: int = 50, offset: int = 0, market: str = None):
+    """
+    Fetch and return the current user's saved albums as a formatted string.
+
+    Parameters:
+        limit (int): Number of albums to return per request (max 50)
+        offset (int): Index of the first album to return
+        market (str): Optional ISO 3166-1 alpha-2 country code
+    """
+    try:
+        all_albums = []
+
+        while True:
+            results = sp.current_user_saved_albums(limit=limit, offset=offset, market=market)
+            items = results.get("items", [])
+
+            for item in items:
+                album = item.get("album", {})
+                album_name = album.get("name", "Unknown")
+                artists = ", ".join([artist.get("name") for artist in album.get("artists", [])])
+                total_tracks = album.get("total_tracks", 0)
+                album_id = album.get("id", "N/A")
+                release_date = album.get("release_date", "Unknown")
+                album_url = album.get("external_urls", {}).get("spotify", "N/A")
+
+                all_albums.append({
+                    "name": album_name,
+                    "artists": artists,
+                    "tracks": total_tracks,
+                    "id": album_id,
+                    "release_date": release_date,
+                    "url": album_url
+                })
+
+            # Break if fewer than 'limit' returned → done
+            if len(items) < limit:
+                break
+
+            offset += limit
+
+        if not all_albums:
+            return "No saved albums found."
+
+        formatted_albums = []
+        for i, album in enumerate(all_albums, start=1):
+            formatted_albums.append(
+                f"{i}. '{album['name']}' by {album['artists']} — Tracks: {album['tracks']}, "
+                f"Release date: {album['release_date']} — ID: {album['id']}\n   Spotify URL: {album['url']}"
+            )
+
+        return "Your Saved Albums:\n" + "\n".join(formatted_albums)
+
+    except Exception as e:
+        logger.error(f"Error fetching saved albums: {e}")
+        return "Error receiving saved albums."
 
 #def current_user_saved_albums_add():
 
@@ -515,7 +652,7 @@ def queue():
         logger.error(f"Error with users queue: {e}")
         return "Error receiving users queue"
 
-def start_playback():
+def start_playback(device_id=device_id):
     try:
         sp.start_playback(device_id=device_id)
         #logger.info("Start playback")
