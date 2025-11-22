@@ -26,6 +26,8 @@ scope=(
             "user-modify-playback-state "
             "user-read-recently-played "
             "user-library-read "
+            "user-top-read "
+
         )
 
 sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=client_id,
@@ -77,11 +79,24 @@ def launch_spotify_before_agent():
             active_device = next((d for d in devices if d.get('is_active')), None)
             if active_device:
                 print(f"Active device name: {active_device['name']} - ID: {active_device['id']}")
-                print("Starting playback")
-                sp.start_playback(device_id=active_device['id'])
+                
+                current_playback = sp.current_playback()
+                if current_playback and current_playback.get('is_playing') and current_playback.get('device', {}).get('id') == active_device['id']:
+                    track = current_playback.get("item")
+                    if track:
+                        song_name = track.get("name", "Unknown Song")
+                        artists = ", ".join(a.get("name", "") for a in track.get("artists", []))
+                        print(f"Currently playing: {song_name} - {artists}")
+                    else:
+                        print("Playback is active, but no track info is available.")
+                else:
+                    print("Starting playback...")
+                    sp.start_playback(device_id=active_device['id'])
+                    
                 return True
+
             else:
-                print("No active device found.\nListing all devices:")
+                print("No active device found.\nListing all available devices:")
                 for i, d in enumerate(devices, start=1):
                     print(f"{i}. Name: {d['name']} | Type: {d['type']} | ID: {d['id']}")
                 
@@ -101,11 +116,11 @@ def launch_spotify_before_agent():
                             print(f"Invalid number. Please enter a number between 1 and {len(devices)}.")
                     except ValueError:
                         print("Invalid input. Please enter a valid number or 'q' to quit.")
-
+        
     except Exception as e:
         logger.error(f"Error initializing Spotify: {e}")
         return None
-
+# helper function
 def add_song_to_queue(song_uri: str):
     try:
         # Extract track ID from URI (format: spotify:track:TRACK_ID)
@@ -124,7 +139,7 @@ def add_song_to_queue(song_uri: str):
     except Exception as e:
         logger.error(f"Error adding track to queue: {e}")
         return "Error adding track to queue"
-
+# helper function
 def find_song_by_name(name: str):
     try:
         results = sp.search(q=name, type='track', limit=1)
@@ -148,7 +163,7 @@ def find_song_by_name(name: str):
     except Exception as e:
         logger.error(f"Error finding song by name '{name}': {e}")
         return None
-
+# helper function
 def find_song_by_lyrics(lyrics: str):
     try:
         results = sp.search(q=f"lyrics:{lyrics}", type='track', limit=1)
@@ -574,32 +589,167 @@ def current_user_saved_albums(limit: int = 50, offset: int = 0, market: str = No
 
 #def current_user_saved_albums_add():
 
-def current_user_saved_tracks():
+def current_user_saved_tracks(limit: int = 20, offset: int = 0, market: str = None):
+    """
+    Fetch and return the current user's saved tracks as a formatted string.
+    """
     try:
-        sp.current_user_saved_tracks(limit=50)
-        #logger.info("Info about users saved tracks")
-        return "Users saved tracks"
-    except Exception as e:
-        logger.error(f"Error with users saved tracks: {e}")
-        return "Error receiving users saved tracks"
+        all_tracks = []
 
-def current_user_top_artists():
-    try:
-        sp.current_user_top_artists(limit=50)
-        #logger.info("Info about users top artists")
-        return "Users top artists"
-    except Exception as e:
-        logger.error(f"Error with users top artists: {e}")
-        return "Error receiving users top artists"
+        while True:
+            results = sp.current_user_saved_tracks(limit=limit, offset=offset, market=market)
+            items = results.get("items", [])
 
-def current_user_top_tracks():
-    try:
-        sp.current_user_top_tracks(limit=50)
-        #logger.info("Info about users top tracks")
-        return "Users top tracks"
+            for item in items:
+                track = item.get("track", {})
+
+                track_name = track.get("name", "Unknown")
+                artists = ", ".join(a.get("name") for a in track.get("artists", []))
+                track_id = track.get("id", "N/A")
+                track_url = track.get("external_urls", {}).get("spotify", "N/A")
+                album_name = track.get("album", {}).get("name", "Unknown")
+                release_date = track.get("album", {}).get("release_date", "Unknown")
+
+                all_tracks.append({
+                    "name": track_name,
+                    "artists": artists,
+                    "album": album_name,
+                    "release_date": release_date,
+                    "id": track_id,
+                    "url": track_url
+                })
+
+            # Stop if Spotify returned less than `limit`
+            if len(items) < limit:
+                break
+
+            offset += limit
+
+        if not all_tracks:
+            return "No saved tracks found."
+
+        formatted = []
+        for i, tr in enumerate(all_tracks, start=1):
+            formatted.append(
+                f"{i}. '{tr['name']}' — {tr['artists']}\n"
+                f"   Album: {tr['album']} | Release: {tr['release_date']}\n"
+                f"   ID: {tr['id']}\n"
+                f"   URL: {tr['url']}"
+            )
+
+        return "Your Saved Tracks:\n\n" + "\n\n".join(formatted)
+
     except Exception as e:
-        logger.error(f"Error with users top tracks: {e}")
-        return "Error receiving users top tracks"
+        logger.error(f"Error fetching saved tracks: {e}")
+        return "Error receiving saved tracks."
+
+#def current_user_saved_tracks_add():
+
+def current_user_top_artists_short_term(limit: int = 20, time_range: str = 'short_term'):
+    """
+    Return ONLY the first <limit> top artists. No pagination.
+    """
+    try:
+        results = sp.current_user_top_artists(limit=limit, offset=0, time_range=time_range)
+        items = results.get("items", [])
+
+        if not items:
+            return "No top artists found."
+
+        formatted = []
+        for i, artist in enumerate(items, start=1):
+            name = artist.get("name", "Unknown")
+            genres = ", ".join(artist.get("genres", []))
+            popularity = artist.get("popularity", 0)
+            url = artist.get("external_urls", {}).get("spotify", "N/A")
+            followers = artist.get("followers", {}).get("total", 0)
+
+            formatted.append(
+                f"{i}. {name}\n"
+                f"   Followers: {followers} | Popularity: {popularity}\n"
+                f"   Genres: {genres}\n"
+                f"   URL: {url}"
+            )
+
+        return "Your Short Term Top Artists (Top 20):\n\n" + "\n\n".join(formatted)
+
+    except Exception as e:
+        logger.error(f"Error fetching top artists: {e}")
+        return "Error receiving top artists."
+
+def current_user_top_artists_long_term(limit: int = 20, time_range: str = 'long_term'):
+    """
+    Return ONLY the first <limit> top artists. No pagination.
+    """
+    try:
+        results = sp.current_user_top_artists(limit=limit, offset=0, time_range=time_range)
+        items = results.get("items", [])
+
+        if not items:
+            return "No top artists found."
+
+        formatted = []
+        for i, artist in enumerate(items, start=1):
+            name = artist.get("name", "Unknown")
+            genres = ", ".join(artist.get("genres", []))
+            popularity = artist.get("popularity", 0)
+            url = artist.get("external_urls", {}).get("spotify", "N/A")
+            followers = artist.get("followers", {}).get("total", 0)
+
+            formatted.append(
+                f"{i}. {name}\n"
+                f"   Followers: {followers} | Popularity: {popularity}\n"
+                f"   Genres: {genres}\n"
+                f"   URL: {url}"
+            )
+
+        return "Your Long Term Top Artists (Top 20):\n\n" + "\n\n".join(formatted)
+
+    except Exception as e:
+        logger.error(f"Error fetching top artists: {e}")
+        return "Error receiving top artists."
+
+def current_user_top_tracks(limit: int = 20, time_range: str = 'long_term'):
+    """
+    Return ONLY the first <limit> top tracks. No pagination.
+    time_range options:
+        short_term  = last 4 weeks
+        medium_term = last 6 months
+        long_term   = several years
+    """
+    try:
+        results = sp.current_user_top_tracks(
+            limit=limit,
+            offset=0,
+            time_range=time_range
+        )
+
+        items = results.get("items", [])
+        if not items:
+            return "No top tracks found."
+
+        formatted = []
+        for i, track in enumerate(items, start=1):
+            name = track.get("name", "Unknown")
+            artists = ", ".join(a.get("name", "") for a in track.get("artists", []))
+            album = track.get("album", {}).get("name", "Unknown")
+            popularity = track.get("popularity", 0)
+            url = track.get("external_urls", {}).get("spotify", "N/A")
+            track_id = track.get("id", "N/A")
+
+            formatted.append(
+                f"{i}. {name} — {artists}\n"
+                f"   Album: {album}\n"
+                f"   Popularity: {popularity}\n"
+                f"   ID: {track_id}\n"
+                f"   URL: {url}"
+            )
+
+        return "Your Top Tracks (Top 20):\n\n" + "\n\n".join(formatted)
+
+    except Exception as e:
+        logger.error(f"Error fetching top tracks: {e}")
+        return "Error receiving top tracks."
 
 def start_playing_artist(artist_name: str):
     try:
@@ -634,31 +784,96 @@ def start_playing_artist(artist_name: str):
     
 #seed_genres = []
 
-def recommendations(seed_genres: list):
-    try:
-        sp.recommendations(seed_genres=seed_genres)
-        #logger.info("Get a list of recommended tracks")
-        return "A list of recommended tracks"
-    except Exception as e:
-        logger.error(f"Error with users recommended tracks: {e}")
-        return "Error receiving users recommended tracks"
+#def recommendations(seed_genres: list):
+#    try:
+#        sp.recommendations(seed_genres=seed_genres)
+#        #logger.info("Get a list of recommended tracks")
+#        return "A list of recommended tracks"
+#    except Exception as e:
+#        logger.error(f"Error with users recommended tracks: {e}")
+#        return "Error receiving users recommended tracks"
 
 def queue():
+    """
+    Return the current Spotify queue with enumeration.
+    Prints currently playing track first, then queued tracks.
+    """
     try:
-        sp.queue()
-        #logger.info("Get current user's queue")
-        return "Current user's queue"
-    except Exception as e:
-        logger.error(f"Error with users queue: {e}")
-        return "Error receiving users queue"
+        data = sp.queue()
+        if not data:
+            return "No queue data found."
 
-def start_playback(device_id=device_id):
+        formatted = []
+
+        # Currently playing
+        current = data.get("currently_playing")
+        if current:
+            name = current.get("name", "Unknown Song")
+            artists = ", ".join(a.get("name", "") for a in current.get("artists", []))
+            album = current.get("album", {}).get("name", "Unknown Album")
+            formatted.append(f"0. 🎧 CURRENTLY PLAYING: {name} — {artists}\n   Album: {album}")
+
+        # Upcoming tracks
+        queue_items = data.get("queue", [])
+        if not queue_items:
+            formatted.append("No upcoming tracks in queue.")
+        else:
+            for i, track in enumerate(queue_items, start=1):
+                name = track.get("name", "Unknown Song")
+                artists = ", ".join(a.get("name", "") for a in track.get("artists", []))
+                album = track.get("album", {}).get("name", "Unknown Album")
+                formatted.append(f"{i}. {name} — {artists}\n   Album: {album}")
+
+        return "Your Spotify Queue:\n\n" + "\n\n".join(formatted)
+
+    except Exception as e:
+        logger.error(f"Error fetching queue: {e}")
+        return "Error retrieving Spotify queue."
+
+def start_playback():
     try:
-        sp.start_playback(device_id=device_id)
+        devices_response = sp.devices()
+        devices = devices_response.get('devices', [])
+        if not devices:
+            return "No devices found."
+        
+        try:
+            devices = sp.devices().get("devices", [])
+            if not devices:
+                print("No devices found.")
+                return None
+            # Return the ID of the first device
+            device_id = devices[0].get("id")
+        except Exception as e:
+            print(f"Error getting device ID: {e}")
+            return None
+        
+        sp.start_playback(device_id=device_id)    
         #logger.info("Start playback")
         return f"Playback started"
     except SpotifyException as e:
         logger.error(f"Error starting playback: {e}")
+
+def volume(volume_percent: int = None, change: int = None):
+    try:
+        devices = sp.devices().get("devices", [])
+        if not devices:
+            return {"error": "No devices found"}
+        device_id = devices[0]["id"]
+        playback = sp.current_playback()
+        if not playback:
+            return {"error": "No active playback"}
+        current_volume = playback["device"].get("volume_percent", 50)
+        
+        if change is not None:
+            new_volume = max(0, min(100, current_volume + change))
+        else:
+            new_volume = max(0, min(100, volume_percent))
+        
+        sp.volume(new_volume, device_id=device_id)
+        return f"Volume changed from {current_volume}% to {new_volume}%"
+    except Exception as e:
+        return {"error": str(e)}
 
 '''
 def start_playback(device_id: str):

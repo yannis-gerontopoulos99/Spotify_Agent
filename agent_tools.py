@@ -6,8 +6,8 @@ from spotify import (add_song_to_queue, find_song_by_name, find_song_by_lyrics, 
                     start_playlist_by_name, pause_music, next_track, previous_track, start_playing_artist,
                     current_user_playing_track, repeat, shuffle, seek_track, current_user,
                     current_user_followed_artists, current_user_playlists, current_user_recently_played,
-                    current_user_saved_albums, current_user_saved_tracks, current_user_top_artists,
-                    current_user_top_tracks, queue, start_playback, devices,
+                    current_user_saved_albums, current_user_saved_tracks, current_user_top_artists_short_term,
+                    current_user_top_tracks, queue, start_playback, volume, devices,
                     is_spotify_running, launch_spotify, close_spotify)
 
 from langchain_community.tools import DuckDuckGoSearchRun
@@ -28,20 +28,17 @@ def web_search_tool(query: str) -> str:
     return results
 
 @tool("start_playback", return_direct=True)
-def start_playback_tool(device_id: str):
+def start_playback_tool():
     """
     Starts or resumes Spotify playback on the user's active device.
 
     Use this tool when the user requests to play, start or resume music or podcasts.
     If no device_id is provided, the default active device will be used.
 
-    Args:
-        device_id (str, optional): Spotify device ID to start playback on.
-
     Returns:
         str: Confirmation that playback has started.
     """
-    return start_playback(device_id=device_id)
+    return start_playback()
 
 @tool("pause_music", return_direct=True)
 def pause_music_tool():
@@ -241,15 +238,37 @@ def current_user_saved_tracks_tool():
     """Gets the user's saved or liked tracks."""
     return current_user_saved_tracks()
 
-@tool("current_user_top_artists", return_direct=True)
-def current_user_top_artists_tool():
+@tool("current_user_top_artists_short_term", return_direct=True)
+def current_user_top_artists_short_term_tool():
     """Returns the user's top Spotify artists based on listening history."""
-    return current_user_top_artists()
+    return current_user_top_artists_short_term()
 
 @tool("current_user_top_tracks", return_direct=True)
 def current_user_top_tracks_tool():
     """Returns the user's most played tracks on Spotify."""
     return current_user_top_tracks()
+
+@tool("volume", return_direct=True)
+def volume_tool(volume_percent: int = None, change: int = None):
+    """
+    Adjust Spotify volume either absolutely or relatively.
+    
+    Parameters:
+    - volume_percent: Set volume to an exact percentage (0-100). Use when user says 
+    "set volume to X" or gives a specific number.
+    - change: Adjust volume relative to current level. Use for phrases like:
+        * "a bit/slightly/a little higher/lower" → ±5
+        * "higher/up/increase/louder" → +10
+        * "lower/down/decrease/quieter" → -10
+        * "much higher/lower" → ±20
+    
+    Examples:
+    - "set volume to 50" → volume_percent=50
+    - "turn it up" → change=10
+    - "a little lower" → change=-5
+    - "much louder" → change=20
+    """
+    return volume(volume_percent=volume_percent, change=change)
 
 @tool("devices", return_direct=True)
 def devices_tool():
@@ -298,7 +317,7 @@ spotify_agent_tools = [web_search_tool, add_song_to_queue_tool, #find_song_by_na
                         repeat_tool, shuffle_tool, seek_track_tool, current_user_tool,
                         current_user_followed_artists_tool, current_user_playlists_tool,
                         current_user_recently_played_tool, current_user_saved_albums_tool,
-                        current_user_saved_tracks_tool, current_user_top_artists_tool,
+                        current_user_saved_tracks_tool, current_user_top_artists_short_term_tool,
                         current_user_top_tracks_tool, queue_tool, start_playing_artist_tool,
-                        start_playback_tool, devices_tool,
+                        start_playback_tool, volume_tool, devices_tool,
                         is_spotify_running_tool, launch_spotify_tool, close_spotify_tool]

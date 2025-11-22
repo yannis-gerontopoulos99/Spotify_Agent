@@ -3,7 +3,6 @@ from deepagents import create_deep_agent
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.checkpoint.memory import InMemorySaver  
 import os
-import sys
 from logger import setup_logger
 from dotenv import load_dotenv
 from agent_tools import spotify_agent_tools
