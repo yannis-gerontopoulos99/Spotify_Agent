@@ -20,9 +20,19 @@ duckduckgo = DuckDuckGoSearchRun()
 @tool("web_search", return_direct=False)
 def web_search_tool(query: str) -> str:
     """
-    Search the web for up-to-date factual information.
-    Useful for retrieving band member names, biographies, or background info
-    that Spotify's API doesn't include.
+    Search the web for up-to-date factual information not available in Spotify's API.
+    
+    Use this when you need:
+    - Band member names, biographies, or artist background information
+    - Release dates, album details, or music history
+    - Song meanings, lyrics explanations, or music trivia
+    - Any factual information about artists, songs, or music that Spotify doesn't provide
+    
+    Args:
+        query (str): The search query (e.g., "who are the members of Radiohead")
+    
+    Returns:
+        str: Search results containing the requested information
     """
     results = duckduckgo.run(query)
     return results
@@ -30,13 +40,17 @@ def web_search_tool(query: str) -> str:
 @tool("start_playback", return_direct=True)
 def start_playback_tool():
     """
-    Starts or resumes Spotify playback on the user's active device.
-
-    Use this tool when the user requests to play, start or resume music or podcasts.
-    If no device_id is provided, the default active device will be used.
-
+    Starts or resumes Spotify playback on the first available device.
+    
+    Use this when the user says:
+    - "play music", "start playing", "resume"
+    - "unpause", "continue playing"
+    
+    This will resume paused playback or start playing on an available device.
+    Does NOT require a specific song - just starts/resumes whatever was last playing.
+    
     Returns:
-        str: Confirmation that playback has started.
+        str: Confirmation that playback has started
     """
     return start_playback()
 
@@ -44,8 +58,14 @@ def start_playback_tool():
 def pause_music_tool():
     """
     Pauses the current Spotify playback.
-
-    Use this tool when the user says things like "pause", "stop", or "hold the music".
+    
+    Use this when the user says:
+    - "pause", "pause the music"
+    - "stop", "stop playing"
+    - "hold the music", "hold on"
+    
+    Returns:
+        str: Confirmation that playback is paused
     """
     return pause_music()
 
@@ -53,17 +73,29 @@ def pause_music_tool():
 def next_track_tool():
     """
     Skips to the next track in the Spotify queue.
-
-    Use when the user says "next song", "skip", or "play the next track".
+    
+    Use this when the user says:
+    - "next song", "skip this song"
+    - "play the next track", "skip"
+    - "next one", "move on"
+    
+    Returns:
+        str: Confirmation that the track was skipped
     """
     return next_track()
 
 @tool("previous_track", return_direct=True)
 def previous_track_tool():
     """
-    Goes back to the previous Spotify track.
-
-    Use when the user says "go back", "previous song", or "play the last one again".
+    Goes back to the previous track in the playback history.
+    
+    Use this when the user says:
+    - "go back", "previous song"
+    - "play the last one again", "previous track"
+    - "back", "rewind to the last song"
+    
+    Returns:
+        str: Confirmation that playback returned to the previous track
     """
     return previous_track()
 
@@ -71,12 +103,23 @@ def previous_track_tool():
 def repeat_tool(state: str):
     """
     Sets the repeat mode for Spotify playback.
-
-    Use when the user requests to repeat a song or playlist.
-    Valid options for 'state' are:
-        - 'track': repeat the current song
-        - 'context': repeat the whole playlist/album
-        - 'off': turn off repeat
+    
+    Use this when the user wants to repeat songs.
+    
+    Parameters:
+    - state (str): Must be one of:
+        * 'track' - Repeat the current song on loop
+        * 'context' - Repeat the entire playlist/album
+        * 'off' - Turn off repeat mode
+    
+    Examples:
+    - "repeat this song" → state='track'
+    - "repeat the playlist" → state='context'
+    - "stop repeating" → state='off'
+    - "loop this track" → state='track'
+    
+    Returns:
+        str: Confirmation of the repeat mode setting
     """
     return repeat(state)
 
@@ -84,8 +127,22 @@ def repeat_tool(state: str):
 def shuffle_tool(state: bool):
     """
     Turns shuffle mode on or off for Spotify playback.
-
-    Use when the user says "shuffle my music" or "turn off shuffle".
+    
+    Use this when the user wants to randomize or order their music.
+    
+    Parameters:
+    - state (bool): 
+        * True - Turn shuffle ON (randomize playback order)
+        * False - Turn shuffle OFF (play in original order)
+    
+    Examples:
+    - "shuffle my music" → state=True
+    - "turn on shuffle" → state=True
+    - "turn off shuffle" → state=False
+    - "play in order" → state=False
+    
+    Returns:
+        str: Confirmation of the shuffle mode setting
     """
     return shuffle(state)
 
@@ -93,55 +150,64 @@ def shuffle_tool(state: bool):
 def seek_track_tool(position_ms: int):
     """
     Seeks to a specific position in the currently playing track.
-
-    Use when the user says things like "fast-forward 30 seconds" or "go back 10 seconds".
-    The position is provided in milliseconds.
+    
+    Use this when the user wants to move to a different timestamp in the song or restart it.
+    
+    Parameters:
+    - position_ms (int): The target position in milliseconds
+        * 1 second = 1000 ms
+        * 30 seconds = 30000 ms
+        * 1 minute = 60000 ms
+    
+    Examples:
+    - "skip ahead 30 seconds" → Calculate current position + 30000 ms
+    - "go back 10 seconds" → Calculate current position - 10000 ms
+    - "go to 2 minutes" → position_ms=120000
+    - "start from the beginning" → position_ms=1
+    - "start the song again" → position_ms=1
+    - "replay - restart song" → position_ms=1
+    
+    IMPORTANT: You need to get the current playback position first, then calculate 
+    the new position based on the user's request (forward/backward).
+    
+    Returns:
+        str: Confirmation of the new track position
     """
     return seek_track(position_ms)
 
 @tool("start_playing_artist", return_direct=True)
 def start_playing_artist_tool(artist_name: str):
     """
-    Starts playing a random popular song from the given artist on Spotify.
-
-    Use this when the user requests to play music by a specific artist 
-    without naming a particular song or playlist.
-
+    Plays a random popular song from the specified artist.
+    
+    Use this when the user wants to listen to an artist without specifying a particular song.
+    This tool searches for the artist, retrieves their top tracks, and plays one randomly.
+    
+    Use this for requests like:
+    - "play some Drake"
+    - "play music by Taylor Swift"
+    - "I want to hear The Beatles"
+    - "put on some Radiohead"
+    
+    DO NOT use this if the user specifies a song name - use start_playing_song_by_name instead.
+    
     Args:
-        artist_name (str): The artist's name (e.g., "Drake", "Taylor Swift").
-
+        artist_name (str): The artist's name (e.g., "Drake", "Taylor Swift", "The Beatles")
+    
     Returns:
-        str: Confirmation message that a random song from the artist is playing.
+        str: Confirmation message with the song name that's now playing
     """
     return start_playing_artist(artist_name)
 
-@tool("add_song_to_queue", return_direct=True)
-def add_song_to_queue_tool(song_uri: str):
-    """
-    Adds a specific song to the Spotify queue using its Spotify URI.
-
-    Use this when the user provides a Spotify link or URI.
-    Example URI: "spotify:track:4uLU6hMCjMI75M1A2tKUQC"
-    """
-    return add_song_to_queue(song_uri)
-
-@tool("add_song_to_queue_by_song_name", return_direct=True)
-def add_song_to_queue_by_song_name_tool(song_name: str):
-    """
-    Finds a song by name and adds it to the Spotify queue.
-
-    Use when the user says "add [song name] to my queue".
-    """
-    return add_song_to_queue_by_song_name(song_name)
-
-@tool("add_song_to_queue_by_lyrics", return_direct=True)
-def add_song_to_queue_by_lyrics_tool(lyrics: str):
-    """
-    Finds a song by its lyrics and adds it to the Spotify queue.
-
-    Use when the user remembers part of a song's lyrics and wants it queued.
-    """
-    return add_song_to_queue_by_lyrics(lyrics)
+#@tool("add_song_to_queue", return_direct=True)
+#def add_song_to_queue_tool(song_uri: str):
+#    """
+#    Adds a specific song to the Spotify queue using its Spotify URI.
+#
+#    Use this when the user provides a Spotify link or URI.
+#    Example URI: "spotify:track:4uLU6hMCjMI75M1A2tKUQC"
+#    """
+#    return add_song_to_queue(song_uri)
 
 #@tool("find_song_by_name", return_direct=True)
 #def find_song_by_name_tool(name: str):
@@ -161,156 +227,414 @@ def add_song_to_queue_by_lyrics_tool(lyrics: str):
 #    """
 #    return find_song_by_lyrics(lyrics)
 
+@tool("add_song_to_queue_by_song_name", return_direct=True)
+def add_song_to_queue_by_song_name_tool(song_name: str):
+    """
+    Finds a song by its name and adds it to the Spotify queue.
+    
+    Use this when the user wants to queue a song without immediately playing it.
+    The song will be added to play after the current track and other queued songs.
+    
+    Use for requests like:
+    - "add [song name] to my queue"
+    - "queue up [song name]"
+    - "add [song name] to play later"
+    - "put [song name] in the queue"
+    
+    Args:
+        song_name (str): The name of the song to queue (e.g., "Bohemian Rhapsody")
+    
+    Returns:
+        str: Confirmation message with the song name and artist that was added to queue
+    """
+    return add_song_to_queue_by_song_name(song_name)
+
+@tool("add_song_to_queue_by_lyrics", return_direct=True)
+def add_song_to_queue_by_lyrics_tool(lyrics: str):
+    """
+    Finds a song by matching lyrics and adds it to the Spotify queue.
+    
+    Use this when the user remembers part of a song's lyrics but not the title.
+    The song will be queued, not played immediately.
+    
+    Use for requests like:
+    - "queue the song that goes '[lyrics]'"
+    - "add that song with the lyrics '[lyrics]' to my queue"
+    - "queue up the song that says '[lyrics]'"
+    
+    Args:
+        lyrics (str): A memorable phrase or line from the song (e.g., "is this the real life")
+    
+    Returns:
+        str: Confirmation message with the song name and artist that was added to queue
+    """
+    return add_song_to_queue_by_lyrics(lyrics)
+
 @tool("start_playing_song_by_name", return_direct=True)
 def start_playing_song_by_name_tool(song_name: str):
     """
-    Starts playing a specific song on Spotify by its name.
-
-    Use when the user says "play [song name]".
+    Searches for a specific song by name and starts playing it immediately.
+    
+    Use this when the user wants to play a specific song right now.
+    This will interrupt current playback and start the requested song.
+    
+    Use for requests like:
+    - "play [song name]"
+    - "play the song [song name]"
+    - "I want to hear [song name]"
+    - "put on [song name]"
+    
+    Args:
+        song_name (str): The name of the song (e.g., "Imagine", "Blinding Lights")
+    
+    Returns:
+        str: Confirmation message that the song is now playing
     """
     return start_playing_song_by_name(song_name)
 
 @tool("start_playing_song_by_lyrics", return_direct=True)
 def start_playing_song_by_lyrics_tool(lyrics: str):
     """
-    Starts playing a Spotify song found by matching given lyrics.
-
-    Use when the user recalls lyrics but not the song title.
+    Finds a song by matching lyrics and starts playing it immediately.
+    
+    Use this when the user remembers lyrics but not the song title and wants to play it now.
+    This will interrupt current playback.
+    
+    Use for requests like:
+    - "play the song that goes '[lyrics]'"
+    - "play that song with '[lyrics]' in it"
+    - "I want to hear the song that says '[lyrics]'"
+    
+    Args:
+        lyrics (str): A memorable phrase or line from the song (e.g., "sweet dreams are made of this")
+    
+    Returns:
+        str: Confirmation message that the song is now playing
     """
     return start_playing_song_by_lyrics(lyrics)
 
 @tool("start_playlist_by_name", return_direct=True)
 def start_playlist_by_name_tool(playlist_name: str):
     """
-    Starts playing a Spotify playlist by its name, genre or artist name.
-
-    Use when the user says "play my [playlist name] playlist".
-    Use when the user says "play a playlist with [artist_name]".
-    Use when the user says "play a [genre] playlist".
+    Searches for a playlist and starts playing it on Spotify.
+    
+    This tool searches for playlists by name and tries multiple query variations:
+    - Exact name match
+    - "[name] playlist"
+    - "This Is [artist name]" (Spotify's official artist playlists)
+    - "[name] Mix"
+    
+    Use for requests like:
+    - "play my [playlist name] playlist"
+    - "play a [genre] playlist" (e.g., "play a jazz playlist")
+    - "play a playlist with [artist name]"
+    - "play the [mood] playlist" (e.g., "play the chill playlist")
+    
+    Args:
+        playlist_name (str): The playlist name, genre, artist name, or mood (e.g., "Discover Weekly", "jazz", "Beyoncé")
+    
+    Returns:
+        str: Confirmation message with the playlist name, owner, and track count
     """
     return start_playlist_by_name(playlist_name)
 
 @tool("queue", return_direct=True)
 def queue_tool():
     """
-    Retrieves the current Spotify playback queue.
-
-    Use when the user asks "what's next" or "show me my queue".
+    Retrieves and displays the current Spotify playback queue.
+    
+    Shows what's currently playing (marked as track 0) and all upcoming queued tracks.
+    Each track includes song name, artist(s), and album information.
+    
+    Use when the user asks:
+    - "what's in my queue"
+    - "what's playing next"
+    - "show me my queue"
+    - "what songs are coming up"
+    - "what's queued"
+    
+    Returns:
+        str: Formatted list showing currently playing track and all queued tracks
     """
     return queue()
 
 @tool("current_user", return_direct=True)
 def current_user_tool():
-    """Fetches the current Spotify user’s profile information."""
+    """
+    Fetches the current Spotify user's profile information.
+    
+    Returns user details including display name, user ID, account type, 
+    follower count, and Spotify profile URL.
+    
+    Use when the user asks:
+    - "what's my Spotify username"
+    - "show me my profile"
+    - "what's my user info"
+    - "who am I logged in as"
+    
+    Returns:
+        str: Formatted user profile information
+    """
     return current_user()
 
 @tool("current_user_playing_track", return_direct=True)
 def current_user_playing_track_tool():
     """
-    Returns details about the currently playing Spotify track.
-
-    Use when the user asks "what’s playing" or "what song is this?".
+    Returns detailed information about the currently playing Spotify track.
+    
+    Provides song name, artist(s), album name, release date, and Spotify URL.
+    
+    Use when the user asks:
+    - "what's playing", "what song is this"
+    - "what am I listening to"
+    - "who's this by", "who sings this"
+    - "what's the name of this song"
+    - "when was this released"
+    
+    Returns:
+        str: Formatted track details including song, artist, album, release date, and URL
     """
     return current_user_playing_track()
 
 @tool("current_user_followed_artists", return_direct=True)
 def current_user_followed_artists_tool():
-    """Gets the list of artists followed by the current user."""
+    """
+    Gets the complete list of artists the current user follows on Spotify.
+    
+    Returns all followed artists with their names, IDs, and follower counts.
+    Uses pagination to retrieve the complete list.
+    
+    Use when the user asks:
+    - "who do I follow"
+    - "show me my followed artists"
+    - "what artists am I following"
+    - "list my artists"
+    
+    Returns:
+        str: Formatted list of all followed artists with details
+    """
     return current_user_followed_artists()
 
 @tool("current_user_playlists", return_direct=True)
 def current_user_playlists_tool():
-    """Lists all Spotify playlists owned or followed by the user."""
+    """
+    Lists all Spotify playlists owned or followed by the user.
+    
+    Returns playlist names, IDs, track counts, and owner information.
+    Includes both user-created playlists and playlists they follow.
+    
+    Use when the user asks:
+    - "show me my playlists"
+    - "what playlists do I have"
+    - "list my playlists"
+    - "what playlists am I following"
+    
+    Returns:
+        str: Formatted list of all playlists with names, owners, and track counts
+    """
     return current_user_playlists()
 
 @tool("current_user_recently_played", return_direct=True)
 def current_user_recently_played_tool():
-    """Fetches the user's recently played tracks on Spotify."""
+    """
+    Fetches the user's recently played tracks on Spotify.
+    
+    Returns the last 10 tracks played with song names, artists, albums, 
+    timestamps of when they were played, and Spotify URLs.
+    
+    Use when the user asks:
+    - "what did I listen to recently"
+    - "show me my recent tracks"
+    - "what have I been playing"
+    - "what was I listening to earlier"
+    
+    Returns:
+        str: Formatted list of recently played tracks with timestamps
+    """
     return current_user_recently_played()
 
 @tool("current_user_saved_albums", return_direct=True)
 def current_user_saved_albums_tool():
-    """Retrieves the user's saved albums from Spotify."""
+    """
+    Retrieves all albums saved in the user's Spotify library.
+    
+    Returns album names, artists, track counts, release dates, IDs, and Spotify URLs.
+    Uses pagination to fetch the complete collection.
+    
+    Use when the user asks:
+    - "show me my saved albums"
+    - "what albums do I have"
+    - "list my albums"
+    - "show me my album collection"
+    
+    Returns:
+        str: Formatted list of all saved albums with complete details
+    """
     return current_user_saved_albums()
 
 @tool("current_user_saved_tracks", return_direct=True)
 def current_user_saved_tracks_tool():
-    """Gets the user's saved or liked tracks."""
+    """
+    Gets all tracks saved or liked by the user in their Spotify library.
+    
+    Returns song names, artists, albums, release dates, IDs, and Spotify URLs.
+    Uses pagination to retrieve the complete collection (starts with first 20).
+    
+    Use when the user asks:
+    - "show me my liked songs"
+    - "what songs do I have saved"
+    - "list my favorite tracks"
+    - "show me my saved music"
+    
+    Returns:
+        str: Formatted list of all saved tracks with complete details
+    """
     return current_user_saved_tracks()
 
 @tool("current_user_top_artists_short_term", return_direct=True)
 def current_user_top_artists_short_term_tool():
-    """Returns the user's top Spotify artists based on listening history."""
+    """
+    Returns the user's top 20 Spotify artists based on the last 4 weeks of listening.
+    
+    Provides artist names, follower counts, popularity scores, genres, and Spotify URLs.
+    This reflects recent listening trends and newly discovered artists.
+    
+    Use when the user asks:
+    - "who are my top artists lately"
+    - "what artists have I been listening to recently"
+    - "show me my recent top artists"
+    - "who have I been playing the most this month"
+    
+    Returns:
+        str: Formatted list of top 20 artists with popularity metrics and genres
+    """
     return current_user_top_artists_short_term()
 
 @tool("current_user_top_tracks", return_direct=True)
 def current_user_top_tracks_tool():
-    """Returns the user's most played tracks on Spotify."""
+    """
+    Returns the user's top 20 most played tracks based on long-term listening history.
+    
+    Provides song names, artists, albums, popularity scores, IDs, and Spotify URLs.
+    This reflects the user's all-time favorite songs over several years.
+    
+    Use when the user asks:
+    - "what are my top songs"
+    - "show me my most played tracks"
+    - "what's my favorite music"
+    - "what do I listen to the most"
+    
+    Returns:
+        str: Formatted list of top 20 tracks with complete details
+    """
     return current_user_top_tracks()
 
 @tool("volume", return_direct=True)
 def volume_tool(volume_percent: int = None, change: int = None):
     """
-    Adjust Spotify volume either absolutely or relatively.
+    Adjusts Spotify volume either to an absolute level or by a relative change.
+    
+    CRITICAL: Use ONLY ONE parameter at a time, never both together.
     
     Parameters:
-    - volume_percent: Set volume to an exact percentage (0-100). Use when user says 
-    "set volume to X" or gives a specific number.
-    - change: Adjust volume relative to current level. Use for phrases like:
+    - volume_percent (int): Set volume to exact percentage (0-100). Use when user specifies 
+    a number like "set volume to 50" or "make it 75%"
+    
+    - change (int): Adjust volume relative to current level. Use for vague requests:
         * "a bit/slightly/a little higher/lower" → ±5
-        * "higher/up/increase/louder" → +10
-        * "lower/down/decrease/quieter" → -10
-        * "much higher/lower" → ±20
+        * "higher/up/increase/louder/raise" → +10
+        * "lower/down/decrease/quieter/reduce" → -10
+        * "much higher/lower/way up/way down" → ±20
     
     Examples:
-    - "set volume to 50" → volume_percent=50
-    - "turn it up" → change=10
-    - "a little lower" → change=-5
-    - "much louder" → change=20
+    - "set volume to 50" → volume_percent=50, change=None
+    - "turn it up" → volume_percent=None, change=10
+    - "a little lower" → volume_percent=None, change=-5
+    - "much louder" → volume_percent=None, change=20
+    - "volume 80%" → volume_percent=80, change=None
+    
+    IMPORTANT: For relative changes, you don't need to know the current volume - 
+    the function automatically calculates it and applies the change.
+    
+    Returns:
+        str: Confirmation showing the volume change (e.g., "Volume changed from 45% to 55%")
     """
     return volume(volume_percent=volume_percent, change=change)
 
 @tool("devices", return_direct=True)
 def devices_tool():
     """
-    Lists all available Spotify playback devices.
-    Use when the user asks "what devices are connected" or "where can I play music".
+    Lists all available Spotify playback devices with their status.
+    
+    Shows device names, IDs, types (computer, smartphone, speaker), and whether 
+    they're currently active or inactive.
+    
+    Use when the user asks:
+    - "what devices are available"
+    - "where can I play music"
+    - "show me my devices"
+    - "what devices are connected to Spotify"
+    
+    Returns:
+        str: Formatted list of all devices with names, types, IDs, and active status
     """
     return devices()
 
 @tool("is_spotify_running", return_direct=True)
 def is_spotify_running_tool():
-    """Checks if the Spotify application is currently running on the system."""
+    """
+    Checks if the Spotify application is currently running on the system.
+    
+    Use this to verify Spotify's status before attempting other operations.
+    
+    Use when the user asks:
+    - "is Spotify running"
+    - "is Spotify open"
+    - "check if Spotify is on"
+    
+    Returns:
+        bool: True if Spotify is running, False if not
+    """
     return is_spotify_running()
 
 @tool("launch_spotify", return_direct=True)
 def launch_spotify_tool():
-    """Launches the Spotify application if it isn’t already running."""
+    """
+    Launches the Spotify application if it isn't already running.
+    
+    Opens Spotify as a detached process that continues running after the script ends.
+    If Spotify is already running, returns a message saying so.
+    
+    Use when the user says:
+    - "open Spotify"
+    - "launch Spotify"
+    - "start Spotify"
+    - "turn on Spotify"
+    
+    Returns:
+        str: Confirmation that Spotify launched, or notification that it's already running
+    """
     return launch_spotify()
 
 @tool("close_spotify", return_direct=True)
 def close_spotify_tool():
-    """Closes or quits the Spotify application."""
+    """
+    Closes or quits the Spotify application gracefully.
+    
+    Terminates the Spotify process using pkill. This will stop all playback.
+    
+    Use when the user says:
+    - "close Spotify"
+    - "quit Spotify"
+    - "shut down Spotify"
+    - "exit Spotify"
+    
+    Returns:
+        str: Confirmation that Spotify was closed
+    """
     return close_spotify()
 
-
-#@tool("start_music", return_direct=True)
-#def start_music_tool(playlist_name: str):
-#    """Start Spotify playback."""
-#    return start_music(playlist_name)
-
-#@tool("currently_playing", return_direct=True)
-#def currently_playing_tool():
-#    """Current Spotify track information."""
-#    return currently_playing()
-
-#@tool("recommendations", return_direct=True)
-#def recommendations_tool(seed_genres: list):
-#    """Get user recommendations."""
-#    return recommendations(seed_genres)
-
-spotify_agent_tools = [web_search_tool, add_song_to_queue_tool, #find_song_by_name_tool, find_song_by_lyrics_tool,
-                        add_song_to_queue_by_song_name_tool, add_song_to_queue_by_lyrics_tool,
+spotify_agent_tools = [web_search_tool, add_song_to_queue_by_song_name_tool, add_song_to_queue_by_lyrics_tool,
                         start_playing_song_by_name_tool, start_playing_song_by_lyrics_tool,
                         start_playlist_by_name_tool, pause_music_tool,
                         next_track_tool, previous_track_tool, current_user_playing_track_tool,

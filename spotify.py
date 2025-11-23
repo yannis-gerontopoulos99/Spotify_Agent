@@ -36,11 +36,8 @@ sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=client_id,
 
 # Spotify functions
 
+# Pre-agent function to ensure Spotify device is ready and prompts user for device selection if needed
 def launch_spotify_before_agent():
-    """
-    Pre-agent function to ensure Spotify device is ready.
-    Prompts user for device selection if needed.
-    """
     try:
         devices_response = sp.devices()
         devices = devices_response.get('devices', [])
@@ -76,10 +73,12 @@ def launch_spotify_before_agent():
                             else:
                                 raise  # re-raise other Spotify errors
         else:
+            # Find active device from available devices
             active_device = next((d for d in devices if d.get('is_active')), None)
             if active_device:
                 print(f"Active device name: {active_device['name']} - ID: {active_device['id']}")
                 
+                # Check if something is currently playing on the active device
                 current_playback = sp.current_playback()
                 if current_playback and current_playback.get('is_playing') and current_playback.get('device', {}).get('id') == active_device['id']:
                     track = current_playback.get("item")
@@ -96,6 +95,7 @@ def launch_spotify_before_agent():
                 return True
 
             else:
+                # No active device found, prompt user to select one
                 print("No active device found.\nListing all available devices:")
                 for i, d in enumerate(devices, start=1):
                     print(f"{i}. Name: {d['name']} | Type: {d['type']} | ID: {d['id']}")
@@ -120,7 +120,9 @@ def launch_spotify_before_agent():
     except Exception as e:
         logger.error(f"Error initializing Spotify: {e}")
         return None
-# helper function
+
+# Helper function
+# Adds a song to the Spotify queue using its URI and returns confirmation with track details
 def add_song_to_queue(song_uri: str):
     try:
         # Extract track ID from URI (format: spotify:track:TRACK_ID)
@@ -139,7 +141,9 @@ def add_song_to_queue(song_uri: str):
     except Exception as e:
         logger.error(f"Error adding track to queue: {e}")
         return "Error adding track to queue"
-# helper function
+
+# Helper function
+# Searches Spotify for a track by name and returns its URI and name
 def find_song_by_name(name: str):
     try:
         results = sp.search(q=name, type='track', limit=1)
@@ -163,7 +167,9 @@ def find_song_by_name(name: str):
     except Exception as e:
         logger.error(f"Error finding song by name '{name}': {e}")
         return None
-# helper function
+
+# Helper function
+# Searches Spotify for a track by lyrics fragment and returns its URI
 def find_song_by_lyrics(lyrics: str):
     try:
         results = sp.search(q=f"lyrics:{lyrics}", type='track', limit=1)
@@ -186,6 +192,7 @@ def find_song_by_lyrics(lyrics: str):
         logger.error(f"Error finding song by lyrics '{lyrics}': {e}")
         return None
 
+# Finds a song by name and adds it to the queue
 def add_song_to_queue_by_song_name(song_name: str):
     result = find_song_by_name(song_name)
     if not result:
@@ -203,6 +210,7 @@ def add_song_to_queue_by_song_name(song_name: str):
         logger.error(f"Unexpected error adding '{track_display_name}' to queue: {e}")
         return f"Unexpected error: {e}"
 
+# Finds a song by lyrics fragment and adds it to the queue
 def add_song_to_queue_by_lyrics(lyrics: str):
     song_uri = find_song_by_lyrics(lyrics)
     if song_uri:
@@ -219,6 +227,7 @@ def add_song_to_queue_by_lyrics(lyrics: str):
         logger.warning(f"No matching track found for lyrics: {lyrics}")
         return "No matching tracks found"
 
+# Finds a song by name and starts playing it immediately
 def start_playing_song_by_name(song_name: str):
     result = find_song_by_name(song_name)
     if result:
@@ -234,6 +243,7 @@ def start_playing_song_by_name(song_name: str):
         logger.warning(f"Song not found: {song_name}")
         return "Couldn't play song. Not found."
 
+# Finds a song by lyrics fragment and starts playing it immediately
 def start_playing_song_by_lyrics(lyrics: str):
     song_uri = find_song_by_lyrics(lyrics)
     if song_uri:
@@ -247,8 +257,10 @@ def start_playing_song_by_lyrics(lyrics: str):
         logger.warning(f"No track found for lyrics: {lyrics}")
         return f"Couldn't play song. Not found."
 
+# Searches for a playlist by name and starts playing it
 def start_playlist_by_name(playlist_name: str):
     try:
+        # Try multiple search query variations to find the playlist
         search_queries = [
             playlist_name,
             f"{playlist_name} playlist",
@@ -293,6 +305,7 @@ def start_playlist_by_name(playlist_name: str):
         logger.error(f"Error starting playlist '{playlist_name}': {e}")
         return "Error starting playlist"
 
+# Pauses the current playback
 def pause_music():
     try:
         sp.pause_playback()
@@ -301,6 +314,7 @@ def pause_music():
         logger.error(f"Error pausing playback: {e}")
         return "Error pausing playback"
 
+# Skips to the next track in the queue
 def next_track():
     try:
         sp.next_track()
@@ -309,6 +323,7 @@ def next_track():
         logger.error(f"Error skipping track: {e}")
         return "Error occurred while skipping track"
 
+# Goes back to the previous track
 def previous_track():
     try:
         sp.previous_track()
@@ -317,14 +332,14 @@ def previous_track():
         logger.error(f"Error going back track: {e}")
         return "Error occurred while going back a track"
 
+# Returns detailed information about the currently playing track
 def current_user_playing_track():
     try:
         current_track = sp.current_user_playing_track()
         if not current_track or not current_track.get("item"):
             return "No track is currently playing."
-
+        
         track_info = current_track["item"]
-
         # Song info
         song_name = track_info.get("name")
         artists = track_info.get("artists", [])
@@ -332,7 +347,7 @@ def current_user_playing_track():
         album_name = track_info.get("album", {}).get("name")
         release_date = track_info.get("album", {}).get("release_date")
         track_url = track_info.get("external_urls", {}).get("spotify")
-
+        
         # Return nicely formatted string
         return (
             f"Song: {song_name}\n"
@@ -341,12 +356,11 @@ def current_user_playing_track():
             f"Release date: {release_date}\n"
             f"Spotify URL: {track_url}"
         )
-        
     except Exception as e:
         logger.error(f"Error getting current track info: {e}")
         return "Error getting current track info"
 
-
+# Sets repeat mode: 'track' (repeat one song), 'context' (repeat all), or 'off'
 def repeat(state: str):
     try:
         if state == 'track':
@@ -362,6 +376,7 @@ def repeat(state: str):
         logger.error(f"Error repating tracks: {e}")
         return "Error repeating tracks"
 
+# Toggles shuffle mode on or off
 def shuffle(state: bool):
     try:
         if state == True:
@@ -374,6 +389,7 @@ def shuffle(state: bool):
         logger.error(f"Error shuffling tracks: {e}")
         return "Error shuffling tracks"
 
+# Seeks to a specific position in the current track (in milliseconds)
 def seek_track(position_ms: int):
     try:
         if position_ms:
@@ -383,13 +399,10 @@ def seek_track(position_ms: int):
         logger.error(f"Error moving track: {e}")
         return(f"Error moving track to {position_ms} ms")
 
+# Fetches and returns the current Spotify user's profile information
 def current_user():
-    """
-    Fetch the current Spotify user's information and return as a formatted string.
-    """
     try:
         user_info = sp.current_user()
-        
         display_name = user_info.get("display_name", "Unknown")
         user_id = user_info.get("id", "Unknown")
         user_type = user_info.get("type", "Unknown")
@@ -407,15 +420,12 @@ def current_user():
             f"Spotify URL: {spotify_url}\n"
             #f"Images: {image_urls}"
         )
-        
     except Exception as e:
         logger.error(f"Error fetching current user info: {e}")
         return "Error receiving current user information"
 
+# Fetches and returns all artists the current user follows as a formatted string
 def current_user_followed_artists():
-    """
-    Fetch and return the current user's followed artists as a formatted string.
-    """
     try:
         after = None
         all_artists = []
@@ -453,10 +463,8 @@ def current_user_followed_artists():
         logger.error(f"Error fetching followed artists: {e}")
         return "Error receiving artists."
 
+# Fetches and returns all playlists owned or followed by the current user
 def current_user_playlists(limit: int = 50):
-    """
-    Fetch and return the current user's playlists as a formatted string.
-    """
     try:
         offset = 0
         all_playlists = []
@@ -496,15 +504,8 @@ def current_user_playlists(limit: int = 50):
         logger.error(f"Error fetching playlists: {e}")
         return "Error receiving playlists."
 
+# Fetches recently played tracks with optional time filters (after/before timestamps in ms)
 def current_user_recently_played(limit: int = 10, after: int = None, before: int = None):
-    """
-    Fetch and return the current user's recently played tracks as a formatted string.
-    
-    Parameters:
-        limit (int): Number of tracks to return (max 50 per Spotify API)
-        after (int): Unix timestamp in milliseconds to return tracks played after
-        before (int): Unix timestamp in milliseconds to return tracks played before
-    """
     try:
         results = sp.current_user_recently_played(limit=limit, after=after, before=before)
         items = results.get("items", [])
@@ -531,15 +532,8 @@ def current_user_recently_played(limit: int = 10, after: int = None, before: int
         logger.error(f"Error fetching recently played tracks: {e}")
         return "Error receiving recently played tracks."
 
+# Fetches all albums saved in the user's library with pagination support
 def current_user_saved_albums(limit: int = 50, offset: int = 0, market: str = None):
-    """
-    Fetch and return the current user's saved albums as a formatted string.
-
-    Parameters:
-        limit (int): Number of albums to return per request (max 50)
-        offset (int): Index of the first album to return
-        market (str): Optional ISO 3166-1 alpha-2 country code
-    """
     try:
         all_albums = []
 
@@ -589,10 +583,8 @@ def current_user_saved_albums(limit: int = 50, offset: int = 0, market: str = No
 
 #def current_user_saved_albums_add():
 
+# Fetches all tracks saved in the user's library with pagination support
 def current_user_saved_tracks(limit: int = 20, offset: int = 0, market: str = None):
-    """
-    Fetch and return the current user's saved tracks as a formatted string.
-    """
     try:
         all_tracks = []
 
@@ -643,12 +635,8 @@ def current_user_saved_tracks(limit: int = 20, offset: int = 0, market: str = No
         logger.error(f"Error fetching saved tracks: {e}")
         return "Error receiving saved tracks."
 
-#def current_user_saved_tracks_add():
-
+# Returns the user's top 20 artists from the last 4 weeks (short term)
 def current_user_top_artists_short_term(limit: int = 20, time_range: str = 'short_term'):
-    """
-    Return ONLY the first <limit> top artists. No pagination.
-    """
     try:
         results = sp.current_user_top_artists(limit=limit, offset=0, time_range=time_range)
         items = results.get("items", [])
@@ -677,10 +665,8 @@ def current_user_top_artists_short_term(limit: int = 20, time_range: str = 'shor
         logger.error(f"Error fetching top artists: {e}")
         return "Error receiving top artists."
 
+# Returns the user's top 20 artists from several years of listening history (long term)
 def current_user_top_artists_long_term(limit: int = 20, time_range: str = 'long_term'):
-    """
-    Return ONLY the first <limit> top artists. No pagination.
-    """
     try:
         results = sp.current_user_top_artists(limit=limit, offset=0, time_range=time_range)
         items = results.get("items", [])
@@ -709,14 +695,8 @@ def current_user_top_artists_long_term(limit: int = 20, time_range: str = 'long_
         logger.error(f"Error fetching top artists: {e}")
         return "Error receiving top artists."
 
+# Returns the user's top tracks based on time range (short_term=4 weeks, medium_term=6 months, long_term=years)
 def current_user_top_tracks(limit: int = 20, time_range: str = 'long_term'):
-    """
-    Return ONLY the first <limit> top tracks. No pagination.
-    time_range options:
-        short_term  = last 4 weeks
-        medium_term = last 6 months
-        long_term   = several years
-    """
     try:
         results = sp.current_user_top_tracks(
             limit=limit,
@@ -751,6 +731,7 @@ def current_user_top_tracks(limit: int = 20, time_range: str = 'long_term'):
         logger.error(f"Error fetching top tracks: {e}")
         return "Error receiving top tracks."
 
+# Searches for an artist and plays a random track from their top tracks
 def start_playing_artist(artist_name: str):
     try:
         # Step 1. Search for the artist
@@ -778,26 +759,8 @@ def start_playing_artist(artist_name: str):
         logger.error(f"Error playing artist {artist_name}: {e}")
         return f"Failed to play music by {artist_name}: {e}"
 
-#def recommendation_genre_seeds():
-#    genres = sp.recommendation_genre_seeds()
-#    return genres
-    
-#seed_genres = []
-
-#def recommendations(seed_genres: list):
-#    try:
-#        sp.recommendations(seed_genres=seed_genres)
-#        #logger.info("Get a list of recommended tracks")
-#        return "A list of recommended tracks"
-#    except Exception as e:
-#        logger.error(f"Error with users recommended tracks: {e}")
-#        return "Error receiving users recommended tracks"
-
+# Returns the current queue showing what's playing now and what's coming up next
 def queue():
-    """
-    Return the current Spotify queue with enumeration.
-    Prints currently playing track first, then queued tracks.
-    """
     try:
         data = sp.queue()
         if not data:
@@ -830,6 +793,7 @@ def queue():
         logger.error(f"Error fetching queue: {e}")
         return "Error retrieving Spotify queue."
 
+# Starts playback on the first available device
 def start_playback():
     try:
         devices_response = sp.devices()
@@ -854,6 +818,7 @@ def start_playback():
     except SpotifyException as e:
         logger.error(f"Error starting playback: {e}")
 
+# Adjusts Spotify volume either to an absolute level or by a relative change
 def volume(volume_percent: int = None, change: int = None):
     try:
         devices = sp.devices().get("devices", [])
@@ -864,57 +829,22 @@ def volume(volume_percent: int = None, change: int = None):
         if not playback:
             return {"error": "No active playback"}
         current_volume = playback["device"].get("volume_percent", 50)
-        
         if change is not None:
             new_volume = max(0, min(100, current_volume + change))
         else:
             new_volume = max(0, min(100, volume_percent))
-        
         sp.volume(new_volume, device_id=device_id)
         return f"Volume changed from {current_volume}% to {new_volume}%"
     except Exception as e:
         return {"error": str(e)}
 
-'''
-def start_playback(device_id: str):
-    try:
-        sp.start_playback(device_id=device_id)
-        #logger.info("Start playback")
-        return f"Playback starting with device_id"
-    except SpotifyException as e:
-        logger.error(f"Error starting playback: {e}")
-        
-        if e.http_status == 404:
-            print("Device not found. Launching Spotify...")
-            launch_spotify()
-            time.sleep(15)
-            
-            # Retry up to 2 times
-            for attempt in range(2):
-                try:
-                    sp.start_playback(device_id=device_id)
-                    print("Playback started after launching Spotify.")
-                    return "Playback started successfully after launching Spotify"
-                except SpotifyException as e2:
-                    print(f"Retry attempt {attempt + 1} failed ({e2.http_status}): {e2}")
-                    logger.error(f"Retry attempt {attempt + 1} failed: {e2}")
-                    if attempt < 1:  # If not the last attempt, wait before retrying
-                        print(f"Waiting 5 seconds before retry {attempt + 2}...")
-                        time.sleep(5)
-                    else:
-                        print("All retry attempts exhausted.")
-                        return "Error receiving users playback after multiple attempts"
-        else:
-            print(f"Spotify error ({e.http_status}): {e}")
-            return "Error receiving users playback"
-'''
+# Returns a formatted list of all available Spotify devices with their status
 def devices():
     try:
         results = sp.devices()  # get the actual device data
         devices = results.get("devices", [])
         if not devices:
             return "No devices found."
-        
         # Format for agent
         device_list = [
             f"Device name: {d['name']} - Id: {d['id']}, Type: ({d['type']}) - {'Status: Active' if d['is_active'] else 'Inactive'}"
@@ -925,36 +855,28 @@ def devices():
         logger.error(f"Error getting devices: {e}")
         return f"Error receiving devices: {e}"
 
+# Checks if Spotify process is currently running on the system
 def is_spotify_running():
-    """Check if Spotify process is currently active."""
     result = subprocess.run(["pgrep", "-f", "/snap/bin/spotify"], stdout=subprocess.PIPE)
     return result.returncode == 0
 
+# Launches Spotify application if it's not already running (detached from script process)
 def launch_spotify():
-    """
-    Launch Spotify.
-    - detach=True: Spotify stays open after script ends
-    - detach=False: tied to this script
-    """
     if is_spotify_running():
         print("Spotify is already running.")
         return None
     try:
         process = subprocess.Popen(["/snap/bin/spotify"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                preexec_fn=os.setpgrp  # detaches Spotify from the script
-                )
+                                    stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL,
+                                    preexec_fn=os.setpgrp  # detaches Spotify from the script
+                                    )
         return "Spotify launched."
     except Exception as e:
         print(f"Error opening Spotify: {e}")
 
-
+# Closes Spotify application gracefully using pkill
 def close_spotify():
-    """
-    Close Spotify gracefully if it's running.
-    Uses pkill (simplest, safe for Snap version).
-    """
     try:
         subprocess.run(["pkill", "-f", "spotify"], check=False)
         return "Spotify closed."
