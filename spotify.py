@@ -122,8 +122,41 @@ def launch_spotify_before_agent():
         return None
 
 # Helper function
+# Returns detailed information about the currently playing track
+def current_user_playing_track_info_helper():
+    try:
+        current_track = sp.current_user_playing_track()
+        if not current_track or not current_track.get("item"):
+            return None
+        
+        track = current_track["item"]
+
+        # Track info
+        track_name = track.get("name")
+        track_id = track.get("id")
+        track_uri = track.get("uri")
+
+        # Artists info
+        artists = track.get("artists", [])
+        artist_names = ", ".join(a.get("name", "") for a in artists)
+        artist_ids = ", ".join(a.get("id", "") for a in artists)
+        artist_uris = ", ".join(a.get("uri", "") for a in artists)
+
+        # Album info
+        album = track.get("album", {})
+        album_name = album.get("name")
+        album_id = album.get("id")
+        album_uri = album.get("uri")
+
+        return (track_name, track_id, artist_names, artist_ids, album_name, album_id
+        )
+    except Exception as e:
+        logger.error(f"Error getting current track info: {e}")
+        return "Error getting current track info"
+
+# Helper function
 # Adds a song to the Spotify queue using its URI and returns confirmation with track details
-def add_song_to_queue(song_uri: str):
+def add_song_to_queue_helper(song_uri: str):
     try:
         # Extract track ID from URI (format: spotify:track:TRACK_ID)
         track_id = song_uri.split(':')[-1]
@@ -144,7 +177,7 @@ def add_song_to_queue(song_uri: str):
 
 # Helper function
 # Searches Spotify for a track by name and returns its URI and name
-def find_song_by_name(name: str):
+def find_song_by_name_helper(name: str):
     try:
         results = sp.search(q=name, type='track', limit=1)
         tracks = results.get('tracks', {}).get('items', [])
@@ -170,7 +203,7 @@ def find_song_by_name(name: str):
 
 # Helper function
 # Searches Spotify for a track by lyrics fragment and returns its URI
-def find_song_by_lyrics(lyrics: str):
+def find_song_by_lyrics_helper(lyrics: str):
     try:
         results = sp.search(q=f"lyrics:{lyrics}", type='track', limit=1)
         tracks = results.get('tracks', {}).get('items', [])
@@ -194,7 +227,7 @@ def find_song_by_lyrics(lyrics: str):
 
 # Finds a song by name and adds it to the queue
 def add_song_to_queue_by_song_name(song_name: str):
-    result = find_song_by_name(song_name)
+    result = find_song_by_name_helper(song_name)
     if not result:
         logger.warning(f"No matching track found for song name: {song_name}")
         return "No matching tracks found"
@@ -202,7 +235,7 @@ def add_song_to_queue_by_song_name(song_name: str):
     song_uri, track_display_name = result
 
     try:
-        add_song_to_queue(song_uri) 
+        add_song_to_queue_helper(song_uri) 
         msg = f"Added to queue: {track_display_name}"
         #print(msg)
         return msg
@@ -212,9 +245,9 @@ def add_song_to_queue_by_song_name(song_name: str):
 
 # Finds a song by lyrics fragment and adds it to the queue
 def add_song_to_queue_by_lyrics(lyrics: str):
-    song_uri = find_song_by_lyrics(lyrics)
+    song_uri = find_song_by_lyrics_helper(lyrics)
     if song_uri:
-        add_song_to_queue(song_uri)
+        add_song_to_queue_helper(song_uri)
 
         # Fetch song details using the Spotify API
         track_info = sp.track(song_uri)
@@ -229,7 +262,7 @@ def add_song_to_queue_by_lyrics(lyrics: str):
 
 # Finds a song by name and starts playing it immediately
 def start_playing_song_by_name(song_name: str):
-    result = find_song_by_name(song_name)
+    result = find_song_by_name_helper(song_name)
     if result:
         song_uri, track_display_name = result
         try:
@@ -245,7 +278,7 @@ def start_playing_song_by_name(song_name: str):
 
 # Finds a song by lyrics fragment and starts playing it immediately
 def start_playing_song_by_lyrics(lyrics: str):
-    song_uri = find_song_by_lyrics(lyrics)
+    song_uri = find_song_by_lyrics_helper(lyrics)
     if song_uri:
         try:
             sp.start_playback(uris=[song_uri])
@@ -295,7 +328,7 @@ def start_playlist_by_name(playlist_name: str):
         
         if playlist_uri and playlist_title:
             sp.start_playback(context_uri=playlist_uri)
-            logger.info(f"Started playlist '{playlist_title}' by {playlist_owner} ({playlist_track_count} tracks) -> {playlist_uri}")
+            #logger.info(f"Started playlist '{playlist_title}' by {playlist_owner} ({playlist_track_count} tracks) -> {playlist_uri}")
             return f"Started playlist: {playlist_title} by {playlist_owner} ({playlist_track_count} tracks)"
         else:
             logger.warning(f"Playlist not found: {playlist_name}")
@@ -758,6 +791,167 @@ def start_playing_artist(artist_name: str):
     except Exception as e:
         logger.error(f"Error playing artist {artist_name}: {e}")
         return f"Failed to play music by {artist_name}: {e}"
+
+# helper
+# Finds all albums by the specified artist
+def find_artist_albums(artist_name: str):
+    try:
+        results = sp.search(q=f"artist:{artist_name}", type="artist", limit=1)
+        if not results["artists"]["items"]:
+            return [], f"No artist found matching '{artist_name}'."
+
+        artist_id = results["artists"]["items"][0]["id"]
+
+        albums = sp.artist_albums(
+            artist_id=artist_id,
+            include_groups=['album', 'single'],
+            limit=50
+        )["items"]
+
+        full_albums = []
+
+        for item in albums:
+            album_id = item["id"]
+            full = sp.album(album_id)
+
+            full_albums.append({
+                "album_id": full["id"],
+                "album_name": full["name"],
+                "release_date": full["release_date"],
+                "popularity": full.get("popularity", 0),
+                "album_type": full["album_type"],
+                "artist_name": full["artists"][0]["name"],
+                "uri": full["uri"],
+                "full": full
+            })
+
+        return full_albums, None
+
+    except Exception as e:
+        return [], str(e)
+
+# Formats and returns a list of albums by the specified artist
+def format_artist_albums(artist_name: str):
+    albums, error = find_artist_albums(artist_name)
+
+    if error:
+        return error
+
+    formatted = []
+
+    for i, a in enumerate(albums, start=1):
+        name = a["artist_name"]
+        album = a["album_name"]
+        release = a["release_date"]
+        album_type = a["album_type"]
+
+        formatted.append(
+            f"{i}. {name}\n"
+            f"   Album: {album}\n"
+            f"   Release Date: {release}\n"
+            f"   Type: {album_type}"
+        )
+
+    return f"Albums for '{artist_name}':\n\n" + "\n\n".join(formatted)
+
+# Searches for an artist and plays a random album from their discography
+def start_playing_artist_album(artist_name: str):
+    try:
+        # 1. Check currently playing album
+        current_info = current_user_playing_track_info_helper()
+        current_album_id = None
+        if current_info:
+            # unpack: track_name, track_id, artist_names, artist_ids, album_name, album_id
+            _, _, _, _, _, current_album_id = current_info
+        
+        # 2. Get albums
+        albums, error = find_artist_albums(artist_name)
+
+        if error:
+            print(error)
+            return
+
+        if not albums:
+            print("No albums found.")
+            return
+
+        # 3. Sort by popularity
+        albums = sorted(albums, key=lambda x: x["popularity"], reverse=True)
+
+        # 4. Take top 10
+        top_10 = albums[:2]
+
+        # 5. Remove current album from top_10 if it's there
+        top_10 = [a for a in top_10 if a["album_id"] != current_album_id]
+
+        if not top_10:
+            return f"The top album by {artist_name} is already playing."
+
+        # 6. Pick random from remaining
+        chosen = random.choice(top_10)
+
+        # 7. Start playback
+        sp.start_playback(context_uri=chosen["uri"])
+
+        return (
+            f"Now Playing Album:\n"
+            f"   Album: {chosen['album_name']}\n"
+            f"   Artist: {chosen['artist_name']}\n"
+            f"   Release Date: {chosen['release_date']}\n"
+            f"   Type: {chosen['album_type']}"
+        )
+
+    except Exception as e:
+        logger.error(f"Error playing artist album {artist_name}: {e}")
+        print(f"Failed to play album by {artist_name}: {e}")
+
+# Search for an album by its name and play the most relevant match.
+def start_playing_album_by_name(album_name: str):
+    try:
+        # 1. Check currently playing album
+        current_info = current_user_playing_track_info_helper()
+        current_album_id = None
+        if current_info:
+            # unpack: track_name, track_id, artist_names, artist_ids, album_name, album_id
+            _, _, _, _, _, current_album_id = current_info
+
+        # 2. Search Spotify for albums
+        results = sp.search(q=f"album:{album_name}", type="album", limit=10)
+
+        albums = results.get("albums", {}).get("items", [])
+        if not albums:
+            return f"No album found with name '{album_name}'."
+
+        # 3. Best match (Spotify ranks by relevance)
+        album = albums[0]
+
+        album_id = album["id"]
+        found_name = album["name"]
+        artist_name = album["artists"][0]["name"]
+        release_date = album.get("release_date")
+        album_type = album.get("album_type")
+
+        # 4. Check if already playing
+        if current_album_id == album_id:
+            return (
+                f"🎵 The album '{found_name}' by {artist_name} "
+                f"is already playing."
+            )
+
+        # 5. Start playback
+        sp.start_playback(context_uri=f"spotify:album:{album_id}")
+
+        return (
+            f"Now Playing Album:\n"
+            f"   Album: {found_name}\n"
+            f"   Artist: {artist_name}\n"
+            f"   Release Date: {release_date}\n"
+            f"   Type: {album_type}"
+        )
+
+    except Exception as e:
+        logger.error(f"Error playing album '{album_name}': {e}")
+        return f"Failed to play album '{album_name}': {e}"
 
 # Returns the current queue showing what's playing now and what's coming up next
 def queue():

@@ -1,10 +1,14 @@
 from langchain.tools import tool
 import os
+import json
+from typing import Any, Dict, List
 from dotenv import load_dotenv
 from spotify import (add_song_to_queue, find_song_by_name, find_song_by_lyrics, add_song_to_queue_by_song_name,
                     add_song_to_queue_by_lyrics, start_playing_song_by_name, start_playing_song_by_lyrics,
                     start_playlist_by_name, pause_music, next_track, previous_track, start_playing_artist,
-                    current_user_playing_track, repeat, shuffle, seek_track, current_user,
+                    format_artist_albums, start_playing_artist_album, start_playing_album_by_name, 
+                    current_user_playing_track, 
+                    repeat, shuffle, seek_track, current_user,
                     current_user_followed_artists, current_user_playlists, current_user_recently_played,
                     current_user_saved_albums, current_user_saved_tracks, current_user_top_artists_short_term,
                     current_user_top_tracks, queue, start_playback, volume, devices,
@@ -198,6 +202,73 @@ def start_playing_artist_tool(artist_name: str):
         str: Confirmation message with the song name that's now playing
     """
     return start_playing_artist(artist_name)
+
+@tool("format_artist_albums", return_direct=True)
+def format_artist_albums_tool(artist_name: str):
+    """
+    Get all the albums from the specified artist.
+    
+    Use this when the user asks about the albums of a specific artist.
+    You can also use this for getting inforamtion only for specific album.
+    This tool searches for the artist, retrieves all their albums, and gets information about them such as
+    album name, release data, and album type.
+    
+    Use this for requests like:
+    - "what are Drake's albums"
+    - "do you know the albums by Taylor Swift"
+    
+    DO NOT use this if the user specifies an album name to be played - use start_playing_album_by_name instead.
+    
+    Args:
+        artist_name (str): The artist's name (e.g., "Drake", "Taylor Swift", "The Beatles")
+    
+    Returns:
+        str: Confirmation message with all the album names or the specific one requested
+    """
+    return format_artist_albums(artist_name)
+
+@tool("start_playing_artist_album", return_direct=True)
+def start_playing_artist_album_tool(artist_name: str):
+    """
+    Plays a random popular album from the specified artist.
+    
+    Use this when the user wants to listen to an artists album without specifying a particular album.
+    This tool searches for the artist, retrieves their top albums, and plays one randomly.
+    
+    Use this for requests like:
+    - "play Drakes album"
+    - "play an album by Taylor Swift"
+    
+    DO NOT use this if the user specifies an album name - use start_playing_album_by_name instead.
+    
+    Args:
+        artist_name (str): The artist's name (e.g., "Drake", "Taylor Swift", "The Beatles")
+    
+    Returns:
+        str: Confirmation message with the albums name that's now playing
+    """
+    return start_playing_artist_album(artist_name)
+
+@tool("start_playing_album_by_name", return_direct=True)
+def start_playing_album_by_name_tool(album_name: str):
+    """
+    Searches for a specific album by name and starts playing it immediately.
+    
+    Use this when the user wants to play a specific album right now.
+    This will interrupt current playback and start the requested album.
+    
+    Use for requests like:
+    - "play [album name]"
+    - "play the album [album name]"
+    - "I want to hear [album name] album"
+    
+    Args:
+        album_name (str): The name of the album (e.g., "Dangerous Woman", "EVERYONE'S a STAR")
+    
+    Returns:
+        str: Confirmation message that the song is now playing
+    """
+    return start_playing_album_by_name(album_name)
 
 #@tool("add_song_to_queue", return_direct=True)
 #def add_song_to_queue_tool(song_uri: str):
@@ -634,6 +705,97 @@ def close_spotify_tool():
     """
     return close_spotify()
 
+# A helper mapping and a tool to execute multi-step plans (JSON)
+tool_function_map = {
+    "web_search": web_search_tool,
+    "start_playback": start_playback_tool,
+    "pause_music": pause_music_tool,
+    "next_track": next_track_tool,
+    "previous_track": previous_track_tool,
+    "repeat": repeat_tool,
+    "shuffle": shuffle_tool,
+    "seek_track": seek_track_tool,
+    "start_playing_artist": start_playing_artist_tool,
+    "add_song_to_queue_by_song_name": add_song_to_queue_by_song_name_tool,
+    "add_song_to_queue_by_lyrics": add_song_to_queue_by_lyrics_tool,
+    "start_playing_song_by_name": start_playing_song_by_name_tool,
+    "start_playing_song_by_lyrics": start_playing_song_by_lyrics_tool,
+    "start_playlist_by_name": start_playlist_by_name_tool,
+    "format_artist_albums": format_artist_albums_tool,
+    "start_playing_artist_album": start_playing_artist_album_tool,
+    "start_playing_album_by_name": start_playing_album_by_name_tool,
+    "queue": queue_tool,
+    "current_user": current_user_tool,
+    "current_user_playing_track": current_user_playing_track_tool,
+    "current_user_followed_artists": current_user_followed_artists_tool,
+    "current_user_playlists": current_user_playlists_tool,
+    "current_user_recently_played": current_user_recently_played_tool,
+    "current_user_saved_albums": current_user_saved_albums_tool,
+    "current_user_saved_tracks": current_user_saved_tracks_tool,
+    "current_user_top_artists_short_term": current_user_top_artists_short_term_tool,
+    "current_user_top_tracks": current_user_top_tracks_tool,
+    "volume": volume_tool,
+    "devices": devices_tool,
+    "is_spotify_running": is_spotify_running_tool,
+    "launch_spotify": launch_spotify_tool,
+    "close_spotify": close_spotify_tool,
+}
+
+@tool("execute_plan", return_direct=True)
+def execute_plan_tool(plan: Any) -> str:
+    """
+    Execute a plan consisting of a JSON array of steps:
+        [ {"tool": "<tool_name>", "args": { ... }}, ... ]
+    Executes steps sequentially, continues on error, and returns a combined summary.
+    """
+    try:
+        # Accept either a JSON string or Python list
+        if isinstance(plan, str):
+            steps = json.loads(plan)
+        else:
+            steps = plan
+
+        if not isinstance(steps, list):
+            return "Plan must be a JSON list of steps."
+
+        # Safety: limit steps to avoid runaway plans
+        MAX_STEPS = 20
+        if len(steps) > MAX_STEPS:
+            return f"Plan too long ({len(steps)} steps). Max allowed is {MAX_STEPS}."
+
+        results: List[str] = []
+        for i, step in enumerate(steps, start=1):
+            if not isinstance(step, dict):
+                results.append(f"Step {i}: invalid step (not an object).")
+                continue
+
+            tool_name = step.get("tool")
+            args = step.get("args", {}) or {}
+
+            fn = tool_function_map.get(tool_name)
+            if fn is None:
+                results.append(f"Step {i}: tool not found: {tool_name}")
+                continue
+
+            try:
+                # Prefer kwargs; fall back to single-arg call if args is not a dict
+                if isinstance(args, dict):
+                    res = fn(**args)
+                elif args is None:
+                    res = fn()
+                else:
+                    res = fn(args)
+                results.append(f"Step {i} ({tool_name}): {res}")
+            except Exception as e:
+                results.append(f"Step {i} ({tool_name}) failed: {e}")
+
+        return "Plan executed:\n" + "\n".join(results)
+
+    except json.JSONDecodeError:
+        return "Invalid JSON plan."
+    except Exception as e:
+        return f"Error executing plan: {e}"
+
 spotify_agent_tools = [web_search_tool, add_song_to_queue_by_song_name_tool, add_song_to_queue_by_lyrics_tool,
                         start_playing_song_by_name_tool, start_playing_song_by_lyrics_tool,
                         start_playlist_by_name_tool, pause_music_tool,
@@ -643,5 +805,7 @@ spotify_agent_tools = [web_search_tool, add_song_to_queue_by_song_name_tool, add
                         current_user_recently_played_tool, current_user_saved_albums_tool,
                         current_user_saved_tracks_tool, current_user_top_artists_short_term_tool,
                         current_user_top_tracks_tool, queue_tool, start_playing_artist_tool,
-                        start_playback_tool, volume_tool, devices_tool,
-                        is_spotify_running_tool, launch_spotify_tool, close_spotify_tool]
+                        format_artist_albums_tool, start_playing_artist_album_tool, 
+                        start_playing_album_by_name_tool, start_playback_tool, volume_tool, devices_tool,
+                        is_spotify_running_tool, launch_spotify_tool, close_spotify_tool,
+                        execute_plan_tool]
