@@ -3,7 +3,7 @@ import os
 import json
 from typing import Any, Dict, List
 from dotenv import load_dotenv
-from spotify import (add_song_to_queue, find_song_by_name, find_song_by_lyrics, add_song_to_queue_by_song_name,
+from spotify import (add_song_to_queue_by_song_name,
                     add_song_to_queue_by_lyrics, start_playing_song_by_name, start_playing_song_by_lyrics,
                     start_playlist_by_name, pause_music, next_track, previous_track, start_playing_artist,
                     format_artist_albums, start_playing_artist_album, start_playing_album_by_name, 
@@ -11,7 +11,7 @@ from spotify import (add_song_to_queue, find_song_by_name, find_song_by_lyrics, 
                     repeat, shuffle, seek_track, current_user,
                     current_user_followed_artists, current_user_playlists, current_user_recently_played,
                     current_user_saved_albums, current_user_saved_tracks, current_user_top_artists_short_term,
-                    current_user_top_tracks, queue, start_playback, volume, devices,
+                    current_user_top_tracks, queue, start_playback, volume, transfer_playback, devices,
                     is_spotify_running, launch_spotify, close_spotify)
 
 from langchain_community.tools import DuckDuckGoSearchRun
@@ -632,6 +632,26 @@ def volume_tool(volume_percent: int = None, change: int = None):
     """
     return volume(volume_percent=volume_percent, change=change)
 
+@tool("transfer_playback", return_direct=True)
+def transfer_playback_tool(device_id :str, force_play=True):
+    """
+    Able to change playing device.
+    
+    Can change device when prompted with its id.
+    
+    Use when the user asks:
+    - "I want to change device"
+    - "Change my device to a different one"
+    - "I want to use a different device"
+    
+    Args:
+        device_id (str): The device id, force_play=True: Starts playback
+    
+    Returns:
+        str: Formatted list of the transferred device with its name, type, and active status
+    """
+    return transfer_playback(device_id, force_play=True)
+
 @tool("devices", return_direct=True)
 def devices_tool():
     """
@@ -735,6 +755,7 @@ tool_function_map = {
     "current_user_top_artists_short_term": current_user_top_artists_short_term_tool,
     "current_user_top_tracks": current_user_top_tracks_tool,
     "volume": volume_tool,
+    "transfer_playback": transfer_playback_tool,
     "devices": devices_tool,
     "is_spotify_running": is_spotify_running_tool,
     "launch_spotify": launch_spotify_tool,
@@ -806,6 +827,7 @@ spotify_agent_tools = [web_search_tool, add_song_to_queue_by_song_name_tool, add
                         current_user_saved_tracks_tool, current_user_top_artists_short_term_tool,
                         current_user_top_tracks_tool, queue_tool, start_playing_artist_tool,
                         format_artist_albums_tool, start_playing_artist_album_tool, 
-                        start_playing_album_by_name_tool, start_playback_tool, volume_tool, devices_tool,
+                        start_playing_album_by_name_tool, start_playback_tool, volume_tool, 
+                        transfer_playback_tool, devices_tool,
                         is_spotify_running_tool, launch_spotify_tool, close_spotify_tool,
                         execute_plan_tool]

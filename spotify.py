@@ -179,7 +179,7 @@ def add_song_to_queue_helper(song_uri: str):
 # Searches Spotify for a track by name and returns its URI and name
 def find_song_by_name_helper(name: str):
     try:
-        results = sp.search(q=name, type='track', limit=1)
+        results = sp.search(q=name, type='track', limit=5)
         tracks = results.get('tracks', {}).get('items', [])
 
         if not tracks:
@@ -205,7 +205,7 @@ def find_song_by_name_helper(name: str):
 # Searches Spotify for a track by lyrics fragment and returns its URI
 def find_song_by_lyrics_helper(lyrics: str):
     try:
-        results = sp.search(q=f"lyrics:{lyrics}", type='track', limit=1)
+        results = sp.search(q=f"lyrics:{lyrics}", type='track', limit=5)
         tracks = results.get('tracks', {}).get('items', [])
 
         if not tracks:
@@ -219,7 +219,7 @@ def find_song_by_lyrics_helper(lyrics: str):
         song_artist = ", ".join(artist['name'] for artist in track['artists'])
 
         print(f"Found song '{song_name}' with lyrics '{lyrics}' | Artist: {song_artist} | URI: {track_id}")
-        return song_uri
+        return (song_uri, song_name)
 
     except Exception as e:
         logger.error(f"Error finding song by lyrics '{lyrics}': {e}")
@@ -262,33 +262,64 @@ def add_song_to_queue_by_lyrics(lyrics: str):
 
 # Finds a song by name and starts playing it immediately
 def start_playing_song_by_name(song_name: str):
-    result = find_song_by_name_helper(song_name)
-    if result:
+    try:
+        # Check what's currently playing
+        current_info = current_user_playing_track_info_helper()
+        
+        # Find the requested song
+        result = find_song_by_name_helper(song_name)
+        if not result:
+            logger.warning(f"Song not found: {song_name}")
+            return "Couldn't play song. Not found."
+        
         song_uri, track_display_name = result
-        try:
-            sp.start_playback(uris=[song_uri])
-            print(f"Now playing: {track_display_name}")
-            return f"Started playing: {track_display_name}"
-        except Exception as e:
-            logger.error(f"Error starting playback for '{song_name}': {e}")
-            return "Couldn't play song. Error."
-    else:
-        logger.warning(f"Song not found: {song_name}")
-        return "Couldn't play song. Not found."
+        
+        # Check if the requested song is already playing
+        if current_info and current_info != "Error getting current track info":
+            current_track_id = current_info[1]
+            requested_track_id = song_uri.split(':')[-1]
+            
+            if current_track_id == requested_track_id:
+                #print(f"'{track_display_name}' is already playing")
+                return f"'{track_display_name}' is already playing"
+        
+        # Start playback
+        sp.start_playback(uris=[song_uri])
+        print(f"Now playing: {track_display_name}")
+        return f"Started playing: {track_display_name}"
+    except Exception as e:
+        logger.error(f"Error starting playback for '{song_name}': {e}")
+        return "Couldn't play song. Error."
 
 # Finds a song by lyrics fragment and starts playing it immediately
 def start_playing_song_by_lyrics(lyrics: str):
-    song_uri = find_song_by_lyrics_helper(lyrics)
-    if song_uri:
-        try:
-            sp.start_playback(uris=[song_uri])
-            return f"Started playing song with lyrics: {lyrics}"
-        except Exception as e:
-            logger.error(f"Error starting playback for lyrics '{lyrics}': {e}")
-            return f"Couldn't play song. Error"
-    else:
-        logger.warning(f"No track found for lyrics: {lyrics}")
-        return f"Couldn't play song. Not found."
+    try:
+        # Check what's currently playing
+        current_info = current_user_playing_track_info_helper()
+        
+        result = find_song_by_lyrics_helper(lyrics)
+        if not result:
+            logger.warning(f"Song with lyrics not found: {lyrics}")
+            return "Couldn't play song. Not found."
+        
+        song_uri, track_display_name = result
+        
+        # Check if the requested song is already playing
+        if current_info and current_info != "Error getting current track info":
+            current_track_id = current_info[1]
+            requested_track_id = song_uri.split(':')[-1]
+            
+            if current_track_id == requested_track_id:
+                #print(f"'{track_display_name}' is already playing")
+                return f"'{track_display_name}' is already playing"
+            
+            # Start playback
+        sp.start_playback(uris=[song_uri])
+        #print(f"Now playing: {track_display_name}")
+        return f"Started playing: {track_display_name}"
+    except Exception as e:
+        logger.error(f"Error starting playback for lyrics: '{lyrics}': {e}")
+        return "Couldn't play song from lyrics. Error."
 
 # Searches for a playlist by name and starts playing it
 def start_playlist_by_name(playlist_name: str):
@@ -352,7 +383,14 @@ def next_track():
     try:
         sp.next_track()
         return "Successfully skipped to the next track"
+    
     except Exception as e:
+        error_message = str(e)
+        
+        # Spotify sends this when there's no previous track or the command is disallowed
+        if "403" in error_message and "Restriction violated" in error_message:
+            return "There is no next track available."
+        
         logger.error(f"Error skipping track: {e}")
         return "Error occurred while skipping track"
 
@@ -361,7 +399,15 @@ def previous_track():
     try:
         sp.previous_track()
         return "Successfully went back to the previous track"
+
     except Exception as e:
+        error_message = str(e)
+
+        # Spotify sends this when there's no previous track or the command is disallowed
+        if "403" in error_message and "Restriction violated" in error_message:
+            return "There is no previous track available."
+
+        # fallback for all other errors
         logger.error(f"Error going back track: {e}")
         return "Error occurred while going back a track"
 
@@ -380,6 +426,9 @@ def current_user_playing_track():
         album_name = track_info.get("album", {}).get("name")
         release_date = track_info.get("album", {}).get("release_date")
         track_url = track_info.get("external_urls", {}).get("spotify")
+        duration_ms = track_info.get("duration_ms", 0)
+        minutes = duration_ms // 60000
+        seconds = (duration_ms % 60000) // 1000
         
         # Return nicely formatted string
         return (
@@ -387,7 +436,8 @@ def current_user_playing_track():
             f"Artist: {artist_names}\n"
             f"Album: {album_name}\n"
             f"Release date: {release_date}\n"
-            f"Spotify URL: {track_url}"
+            f"Spotify URL: {track_url}\n"
+            f"Song duration: {minutes}:{seconds:02d} minutes"
         )
     except Exception as e:
         logger.error(f"Error getting current track info: {e}")
@@ -774,23 +824,36 @@ def start_playing_artist(artist_name: str):
 
         artist_id = results["artists"]["items"][0]["id"]
 
-        # Step 2. Get the artist's top tracks (most popular songs)
+        # Step 2. Get the artist's top tracks
         top_tracks = sp.artist_top_tracks(artist_id)["tracks"]
         if not top_tracks:
             return f"No top tracks found for '{artist_name}'."
 
-        # Step 3. Pick a random one
-        random_track = random.choice(top_tracks)
+        # Get currently playing track ID
+        current_info = current_user_playing_track_info_helper()
+        current_track_id = current_info[1] if current_info else None
+
+        # Step 3. Pick a random track that is NOT the currently playing track
+        available_tracks = [t for t in top_tracks if t["id"] != current_track_id]
+
+        # If all tracks match the current one (rare but possible)
+        if not available_tracks:
+            # Just play something anyway (fallback)
+            random_track = random.choice(top_tracks)
+        else:
+            random_track = random.choice(available_tracks)
+
         uri = random_track["uri"]
 
         # Step 4. Start playback
         sp.start_playback(uris=[uri])
 
-        #logger.info(f"Playing track '{random_track['name']}' by {artist_name}")
         return f"Playing '{random_track['name']}' by {artist_name}."
+
     except Exception as e:
         logger.error(f"Error playing artist {artist_name}: {e}")
         return f"Failed to play music by {artist_name}: {e}"
+
 
 # helper
 # Finds all albums by the specified artist
@@ -1031,6 +1094,35 @@ def volume(volume_percent: int = None, change: int = None):
         return f"Volume changed from {current_volume}% to {new_volume}%"
     except Exception as e:
         return {"error": str(e)}
+
+# Transfers to a different device using it's id
+def transfer_playback(device_id: str, force_play=True):
+    try:
+        # Transfer playback to the new device
+        sp.transfer_playback(device_id=device_id, force_play=force_play)
+
+        # Get currently active device info
+        current_playback = sp.current_playback()
+        if current_playback and current_playback.get("device"):
+            device = current_playback["device"]
+            device_name = device.get("name", "Unknown")
+            device_type = device.get("type", "Unknown")
+            is_active = device.get("is_active", False)
+
+            device_info = (
+                f"Current device details:\n"
+                f"Name: {device_name}\n"
+                f"Type: {device_type}\n"
+                f"Active: {is_active}"
+            )
+        else:
+            device_info = "No active device found after transfer."
+
+        return f"Changed to device with Id: {device_id}\n{device_info}"
+
+    except Exception as e:
+        logger.error(f"Error transferring devices: {e}")
+        return f"Error transferring devices: {e}"
 
 # Returns a formatted list of all available Spotify devices with their status
 def devices():
