@@ -227,38 +227,65 @@ def find_song_by_lyrics_helper(lyrics: str):
 
 # Finds a song by name and adds it to the queue
 def add_song_to_queue_by_song_name(song_name: str):
-    result = find_song_by_name_helper(song_name)
-    if not result:
-        logger.warning(f"No matching track found for song name: {song_name}")
-        return "No matching tracks found"
-
-    song_uri, track_display_name = result
-
     try:
+        # Check what's currently playing
+        current_info = current_user_playing_track_info_helper()
+        
+        # Find the requested song
+        result = find_song_by_name_helper(song_name)
+        if not result:
+            logger.warning(f"Song not found: {song_name}")
+            return "Couldn't play song. Not found."
+
+        song_uri, track_display_name = result
+        requested_track_id = song_uri.split(':')[-1]
+
+        # Check if the requested song is already playing
+        if current_info and current_info != "Error getting current track info":
+            current_track_id = current_info[1]
+                
+            if current_track_id == requested_track_id:
+                return f"'{track_display_name}' is already playing"
+
+        # Queue the song
         add_song_to_queue_helper(song_uri) 
         msg = f"Added to queue: {track_display_name}"
-        #print(msg)
         return msg
+        
     except Exception as e:
-        logger.error(f"Unexpected error adding '{track_display_name}' to queue: {e}")
+        logger.error(f"Unexpected error adding '{song_name}' to queue: {e}")
         return f"Unexpected error: {e}"
 
 # Finds a song by lyrics fragment and adds it to the queue
 def add_song_to_queue_by_lyrics(lyrics: str):
-    song_uri = find_song_by_lyrics_helper(lyrics)
-    if song_uri:
+    try:
+        # Check what's currently playing
+        current_info = current_user_playing_track_info_helper()
+        
+        # Find the song by lyrics
+        result = find_song_by_lyrics_helper(lyrics)
+        if not result:
+            logger.warning(f"No matching track found for lyrics: {lyrics}")
+            return "No matching tracks found"
+        
+        song_uri, track_display_name = result
+        requested_track_id = song_uri.split(':')[-1]
+        
+        # Check if the requested song is already playing
+        if current_info and current_info != "Error getting current track info":
+            current_track_id = current_info[1]
+            
+            if current_track_id == requested_track_id:
+                return f"'{track_display_name}' is already playing"
+        
+        # Queue the song
         add_song_to_queue_helper(song_uri)
-
-        # Fetch song details using the Spotify API
-        track_info = sp.track(song_uri)
-        track_name = track_info['name']
-        artist_name = ", ".join(artist['name'] for artist in track_info['artists'])
-
-        #print(f"Added to queue: {track_name} — {artist_name}")
-        return (f"Added to queue: {track_name} — {artist_name}")
-    else:
-        logger.warning(f"No matching track found for lyrics: {lyrics}")
-        return "No matching tracks found"
+        msg = f"Added to queue: {track_display_name}"
+        return msg
+        
+    except Exception as e:
+        logger.error(f"Error adding song with lyrics '{lyrics}' to queue: {e}")
+        return "Error adding track to queue"
 
 # Finds a song by name and starts playing it immediately
 def start_playing_song_by_name(song_name: str):
@@ -997,7 +1024,7 @@ def start_playing_album_by_name(album_name: str):
         # 4. Check if already playing
         if current_album_id == album_id:
             return (
-                f"🎵 The album '{found_name}' by {artist_name} "
+                f"The album '{found_name}' by {artist_name} "
                 f"is already playing."
             )
 
