@@ -882,9 +882,9 @@ def start_playing_artist(artist_name: str):
         return f"Failed to play music by {artist_name}: {e}"
 
 
-# helper
+# Helper function
 # Finds all albums by the specified artist
-def find_artist_albums(artist_name: str):
+def find_artist_albums_helper(artist_name: str):
     try:
         results = sp.search(q=f"artist:{artist_name}", type="artist", limit=1)
         if not results["artists"]["items"]:
@@ -922,7 +922,7 @@ def find_artist_albums(artist_name: str):
 
 # Formats and returns a list of albums by the specified artist
 def format_artist_albums(artist_name: str):
-    albums, error = find_artist_albums(artist_name)
+    albums, error = find_artist_albums_helper(artist_name)
 
     if error:
         return error
@@ -955,7 +955,7 @@ def start_playing_artist_album(artist_name: str):
             _, _, _, _, _, current_album_id = current_info
         
         # 2. Get albums
-        albums, error = find_artist_albums(artist_name)
+        albums, error = find_artist_albums_helper(artist_name)
 
         if error:
             print(error)
