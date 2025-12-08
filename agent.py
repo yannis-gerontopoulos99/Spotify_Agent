@@ -1,7 +1,11 @@
 from langchain.agents import create_agent
 from deepagents import create_deep_agent
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_mistralai import ChatMistralAI
 from langgraph.checkpoint.memory import InMemorySaver  
+from langchain.agents.middleware import (SummarizationMiddleware, ModelFallbackMiddleware, PIIMiddleware, 
+                                        LLMToolSelectorMiddleware,)
+import vertexai
 import os
 from logger import setup_logger
 from dotenv import load_dotenv
@@ -11,6 +15,11 @@ from spotify import launch_spotify_before_agent
 logger = setup_logger()
 load_dotenv()
 
+#vertexai.init(
+#    project=os.getenv("GOOGLE_PROJECT_ID"),
+#    location=os.getenv("LOCATION"),
+#)
+
 def main():
     # Run Spotify initialization first
     result = launch_spotify_before_agent()
@@ -19,10 +28,10 @@ def main():
         return
     
     # Continue with agent
-    api_key = os.getenv("GOOGLE_API_KEY")
+    api_key = os.getenv("MISTRAL_API_KEY")
     tools = spotify_agent_tools
-    model = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash-lite",
+    model = ChatMistralAI(
+        model="mistral-small-latest",
         api_key=api_key,
         temperature=0,
     )
@@ -31,6 +40,12 @@ def main():
         model, 
         tools=tools, 
         checkpointer=InMemorySaver(),
+        middleware=[SummarizationMiddleware(model="mistral-small-latest",),
+                    ModelFallbackMiddleware("mistral-small-latest", ),
+                    PIIMiddleware("api_key", detector=r"sk-[a-zA-Z0-9]{32}", strategy="block",),
+                    #LLMToolSelectorMiddleware(model="mistral-small-latest", max_tools=3,),
+                    #ModelRetryMiddleware(max_retries=3, backoff_factor=2.0, initial_delay=2.0,),
+                    ],
         system_prompt="""You are DJ Spot, a swaggy Spotify assistant. Handle multi-step requests by using the available tools.
 
 When a user asks for an action:
