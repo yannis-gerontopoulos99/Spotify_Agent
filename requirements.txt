@@ -3,6 +3,8 @@ dotenv
 langchain==1.0.3
 langgraph
 langchain_google_genai
+langchain_mistralai
+langchain-google-vertexai
 google-genai
 deepagents==0.2.4
 langchain_community
