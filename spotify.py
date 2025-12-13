@@ -156,7 +156,7 @@ def current_user_playing_track_info_helper():
 
 # Helper function
 # Adds a song to the Spotify queue using its URI and returns confirmation with track details
-def add_song_to_queue_helper(song_uri: str):
+def add_song_to_queue_helper(song_uri: str, device_id: str):
     try:
         # Extract track ID from URI (format: spotify:track:TRACK_ID)
         track_id = song_uri.split(':')[-1]
@@ -167,7 +167,7 @@ def add_song_to_queue_helper(song_uri: str):
         artists = ', '.join([artist['name'] for artist in track_info['artists']])
         
         # Add to queue
-        sp.add_to_queue(song_uri)
+        sp.add_to_queue(song_uri, device_id)
         
         #logger.info(f"Added to queue: {artists} - {song_name}")
         return f"Added to queue: {artists} - {song_name}"
@@ -247,8 +247,21 @@ def add_song_to_queue_by_song_name(song_name: str):
             if current_track_id == requested_track_id:
                 return f"'{track_display_name}' is already playing"
 
+        # Check active device for app launch scenario
+        devices_response = sp.devices()
+        devices = devices_response.get('devices', [])
+        if not devices:
+            return "No devices found."
+        
+        devices = sp.devices().get("devices", [])
+        if not devices:
+            print("No devices found.")
+            return None
+        # Return the ID of the first device
+        device_id = devices[0].get("id")
+        
         # Queue the song
-        add_song_to_queue_helper(song_uri) 
+        add_song_to_queue_helper(song_uri, device_id) 
         msg = f"Added to queue: {track_display_name}"
         return msg
         
@@ -278,8 +291,21 @@ def add_song_to_queue_by_lyrics(lyrics: str):
             if current_track_id == requested_track_id:
                 return f"'{track_display_name}' is already playing"
         
+        # Check active device for app launch scenario
+        devices_response = sp.devices()
+        devices = devices_response.get('devices', [])
+        if not devices:
+            return "No devices found."
+        
+        devices = sp.devices().get("devices", [])
+        if not devices:
+            print("No devices found.")
+            return None
+        # Return the ID of the first device
+        device_id = devices[0].get("id")
+        
         # Queue the song
-        add_song_to_queue_helper(song_uri)
+        add_song_to_queue_helper(song_uri, device_id)
         msg = f"Added to queue: {track_display_name}"
         return msg
         
@@ -310,8 +336,21 @@ def start_playing_song_by_name(song_name: str):
                 #print(f"'{track_display_name}' is already playing")
                 return f"'{track_display_name}' is already playing"
         
+        # Check active device for app launch scenario
+        devices_response = sp.devices()
+        devices = devices_response.get('devices', [])
+        if not devices:
+            return "No devices found."
+        
+        devices = sp.devices().get("devices", [])
+        if not devices:
+            print("No devices found.")
+            return None
+        # Return the ID of the first device
+        device_id = devices[0].get("id")
+        
         # Start playback
-        sp.start_playback(uris=[song_uri])
+        sp.start_playback(device_id, uris=[song_uri])
         print(f"Now playing: {track_display_name}")
         return f"Started playing: {track_display_name}"
     except Exception as e:
@@ -339,9 +378,22 @@ def start_playing_song_by_lyrics(lyrics: str):
             if current_track_id == requested_track_id:
                 #print(f"'{track_display_name}' is already playing")
                 return f"'{track_display_name}' is already playing"
-            
-            # Start playback
-        sp.start_playback(uris=[song_uri])
+        
+        # Check active device for app launch scenario
+        devices_response = sp.devices()
+        devices = devices_response.get('devices', [])
+        if not devices:
+            return "No devices found."
+        
+        devices = sp.devices().get("devices", [])
+        if not devices:
+            print("No devices found.")
+            return None
+        # Return the ID of the first device
+        device_id = devices[0].get("id")
+        
+        # Start playback
+        sp.start_playback(device_id, uris=[song_uri])
         #print(f"Now playing: {track_display_name}")
         return f"Started playing: {track_display_name}"
     except Exception as e:
@@ -385,7 +437,20 @@ def start_playlist_by_name(playlist_name: str):
                     break
         
         if playlist_uri and playlist_title:
-            sp.start_playback(context_uri=playlist_uri)
+            # Check active device for app launch scenario
+            devices_response = sp.devices()
+            devices = devices_response.get('devices', [])
+            if not devices:
+                return "No devices found."
+            
+            devices = sp.devices().get("devices", [])
+            if not devices:
+                print("No devices found.")
+                return None
+            # Return the ID of the first device
+            device_id = devices[0].get("id")
+            
+            sp.start_playback(device_id, context_uri=playlist_uri)
             #logger.info(f"Started playlist '{playlist_title}' by {playlist_owner} ({playlist_track_count} tracks) -> {playlist_uri}")
             return f"Started playlist: {playlist_title} by {playlist_owner} ({playlist_track_count} tracks)"
         else:
@@ -399,16 +464,48 @@ def start_playlist_by_name(playlist_name: str):
 # Pauses the current playback
 def pause_music():
     try:
-        sp.pause_playback()
+        # Check active device for app launch scenario
+        devices_response = sp.devices()
+        devices = devices_response.get('devices', [])
+        if not devices:
+            return "No devices found."
+        
+        devices = sp.devices().get("devices", [])
+        if not devices:
+            print("No devices found.")
+            return None
+        # Return the ID of the first device
+        device_id = devices[0].get("id")
+        
+        sp.pause_playback(device_id)
         return "Playback paused"
     except Exception as e:
-        logger.error(f"Error pausing playback: {e}")
-        return "Error pausing playback"
+        error_message = str(e)
+        
+        # Spotify sends this when there's no previous track or the command is disallowed
+        if "403" in error_message and "Restriction violated" in error_message:
+            return "There is no track available to pause."
+        
+        logger.error(f"Error pausing track: {e}")
+        return "Error occurred while pausing track"
 
 # Skips to the next track in the queue
 def next_track():
     try:
-        sp.next_track()
+        # Check active device for app launch scenario
+        devices_response = sp.devices()
+        devices = devices_response.get('devices', [])
+        if not devices:
+            return "No devices found."
+        
+        devices = sp.devices().get("devices", [])
+        if not devices:
+            print("No devices found.")
+            return None
+        # Return the ID of the first device
+        device_id = devices[0].get("id")
+        
+        sp.next_track(device_id)
         return "Successfully skipped to the next track"
     
     except Exception as e:
@@ -424,7 +521,20 @@ def next_track():
 # Goes back to the previous track
 def previous_track():
     try:
-        sp.previous_track()
+        # Check active device for app launch scenario
+        devices_response = sp.devices()
+        devices = devices_response.get('devices', [])
+        if not devices:
+            return "No devices found."
+        
+        devices = sp.devices().get("devices", [])
+        if not devices:
+            print("No devices found.")
+            return None
+        # Return the ID of the first device
+        device_id = devices[0].get("id")
+        
+        sp.previous_track(device_id)
         return "Successfully went back to the previous track"
 
     except Exception as e:
@@ -473,28 +583,51 @@ def current_user_playing_track():
 # Sets repeat mode: 'track' (repeat one song), 'context' (repeat all), or 'off'
 def repeat(state: str):
     try:
+        # Check active device for app launch scenario
+        devices_response = sp.devices()
+        devices = devices_response.get('devices', [])
+        if not devices:
+            return "No devices found."
+        
+        devices = sp.devices().get("devices", [])
+        if not devices:
+            print("No devices found.")
+            return None
+        # Return the ID of the first device
+        device_id = devices[0].get("id")
+        
         if state == 'track':
-            sp.repeat(state='track')
+            sp.repeat(state='track', device_id=device_id)
             return "This track will be repeated"
         elif state == 'context':
-            sp.repeat(state='context')
+            sp.repeat(state='context', device_id=device_id)
             return "All tracks will be repeated"
         else:
-            sp.repeat(state='off')
+            sp.repeat(state='off', device_id=device_id)
             return "Repeat is off"
     except Exception as e:
-        logger.error(f"Error repating tracks: {e}")
+        logger.error(f"Error repeating tracks: {e}")
         return "Error repeating tracks"
 
 # Toggles shuffle mode on or off
 def shuffle(state: bool):
     try:
-        if state == True:
-            sp.shuffle(state=True)
-            return "Track shuffling is on"
-        else:
-            sp.shuffle(state=False)
-            return "Track shuffling is off"
+        # Check active device for app launch scenario
+        devices_response = sp.devices()
+        devices = devices_response.get('devices', [])
+        if not devices:
+            return "No devices found."
+        
+        devices = sp.devices().get("devices", [])
+        if not devices:
+            print("No devices found.")
+            return None
+        # Return the ID of the first device
+        device_id = devices[0].get("id")
+        
+        sp.shuffle(state=state, device_id=device_id)
+        status = "on" if state else "off"
+        return f"Track shuffling is {status}"
     except Exception as e:
         logger.error(f"Error shuffling tracks: {e}")
         return "Error shuffling tracks"
@@ -502,8 +635,21 @@ def shuffle(state: bool):
 # Seeks to a specific position in the current track (in milliseconds)
 def seek_track(position_ms: int):
     try:
+        # Check active device for app launch scenario
+        devices_response = sp.devices()
+        devices = devices_response.get('devices', [])
+        if not devices:
+            return "No devices found."
+        
+        devices = sp.devices().get("devices", [])
+        if not devices:
+            print("No devices found.")
+            return None
+        # Return the ID of the first device
+        device_id = devices[0].get("id")
+        
         if position_ms:
-            sp.seek_track(position_ms)
+            sp.seek_track(device_id, position_ms)
             return f"Track moved to {position_ms} ms"
     except Exception as e:
         logger.error(f"Error moving track: {e}")
@@ -872,15 +1018,27 @@ def start_playing_artist(artist_name: str):
 
         uri = random_track["uri"]
 
+        # Check active device for app launch scenario
+        devices_response = sp.devices()
+        devices = devices_response.get('devices', [])
+        if not devices:
+            return "No devices found."
+        
+        devices = sp.devices().get("devices", [])
+        if not devices:
+            print("No devices found.")
+            return None
+        # Return the ID of the first device
+        device_id = devices[0].get("id")
+        
         # Step 4. Start playback
-        sp.start_playback(uris=[uri])
+        sp.start_playback(device_id, uris=[uri])
 
         return f"Playing '{random_track['name']}' by {artist_name}."
 
     except Exception as e:
         logger.error(f"Error playing artist {artist_name}: {e}")
         return f"Failed to play music by {artist_name}: {e}"
-
 
 # Helper function
 # Finds all albums by the specified artist
@@ -980,8 +1138,21 @@ def start_playing_artist_album(artist_name: str):
         # 6. Pick random from remaining
         chosen = random.choice(top_10)
 
+        # Check active device for app launch scenario
+        devices_response = sp.devices()
+        devices = devices_response.get('devices', [])
+        if not devices:
+            return "No devices found."
+        
+        devices = sp.devices().get("devices", [])
+        if not devices:
+            print("No devices found.")
+            return None
+        # Return the ID of the first device
+        device_id = devices[0].get("id")
+
         # 7. Start playback
-        sp.start_playback(context_uri=chosen["uri"])
+        sp.start_playback(device_id, context_uri=chosen["uri"])
 
         return (
             f"Now Playing Album:\n"
@@ -1028,8 +1199,21 @@ def start_playing_album_by_name(album_name: str):
                 f"is already playing."
             )
 
+        # Check active device for app launch scenario
+        devices_response = sp.devices()
+        devices = devices_response.get('devices', [])
+        if not devices:
+            return "No devices found."
+        
+        devices = sp.devices().get("devices", [])
+        if not devices:
+            print("No devices found.")
+            return None
+        # Return the ID of the first device
+        device_id = devices[0].get("id")
+
         # 5. Start playback
-        sp.start_playback(context_uri=f"spotify:album:{album_id}")
+        sp.start_playback(device_id, context_uri=f"spotify:album:{album_id}")
 
         return (
             f"Now Playing Album:\n"
@@ -1117,7 +1301,7 @@ def volume(volume_percent: int = None, change: int = None):
             new_volume = max(0, min(100, current_volume + change))
         else:
             new_volume = max(0, min(100, volume_percent))
-        sp.volume(new_volume, device_id=device_id)
+        sp.volume(new_volume, device_id)
         return f"Volume changed from {current_volume}% to {new_volume}%"
     except Exception as e:
         return {"error": str(e)}
