@@ -5,6 +5,12 @@ langgraph
 langchain_google_genai
 langchain_mistralai
 langchain-google-vertexai
+langsmith
+langgraph-checkpoint-postgres
+psycopg
+psycopg2-binary
+flask
+flask_cors
 google-genai
 deepagents==0.2.4
 langchain_community
