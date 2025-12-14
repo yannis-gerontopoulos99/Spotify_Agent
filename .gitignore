@@ -7,3 +7,6 @@ test.py
 test_2.py
 agent_audio.py
 temp_recording.wav
+spotify-agent-frontend/
+spotify
+view_db.py
