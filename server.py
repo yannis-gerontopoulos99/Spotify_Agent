@@ -3,6 +3,7 @@ from flask_cors import CORS
 import uuid
 from dotenv import load_dotenv
 from logger import setup_logger
+from datetime import datetime
 
 load_dotenv()
 logger = setup_logger()
@@ -10,24 +11,80 @@ logger = setup_logger()
 app = Flask(__name__)
 CORS(app)
 
-@app.route('/chat', methods=['POST'])
-def chat():
+# Store active chat sessions (in production, use database)
+chat_sessions = {}
+
+@app.route('/chat/new', methods=['POST'])
+def new_chat():
+    """Create a new chat session"""
+    session_id = str(uuid.uuid4())
+    chat_sessions[session_id] = {
+        'id': session_id,
+        'created_at': datetime.now().isoformat(),
+        'messages': [],
+        'title': 'New Chat'
+    }
+    return jsonify({'session_id': session_id})
+
+@app.route('/chat/sessions', methods=['GET'])
+def get_chat_sessions():
+    """Get all previous chat sessions"""
+    sessions = list(chat_sessions.values())
+    return jsonify({'sessions': sessions})
+
+@app.route('/chat/<session_id>', methods=['GET'])
+def get_chat_session(session_id):
+    """Get specific chat session"""
+    if session_id not in chat_sessions:
+        return jsonify({'error': 'Session not found'}), 404
+    return jsonify(chat_sessions[session_id])
+
+@app.route('/chat/<session_id>', methods=['POST'])
+def chat(session_id):
+    """Send message in a chat session"""
     try:
+        if session_id not in chat_sessions:
+            return jsonify({'error': 'Session not found'}), 404
+            
         data = request.json
         message = data.get('message', '')
         
         if not message:
             return jsonify({'error': 'No message provided'}), 400
         
-        # Call your agent logic here
-        result = process_agent_message(message)
+        # Use session_id as thread_id for consistent agent memory
+        result = process_agent_message(message, session_id)
         
-        return jsonify({'message': result})
+        # Store message in session
+        chat_sessions[session_id]['messages'].append({
+            'role': 'user',
+            'content': message,
+            'timestamp': datetime.now().isoformat()
+        })
+        chat_sessions[session_id]['messages'].append({
+            'role': 'assistant',
+            'content': result,
+            'timestamp': datetime.now().isoformat()
+        })
+        
+        # Update chat title from first message
+        if len(chat_sessions[session_id]['messages']) == 2:
+            chat_sessions[session_id]['title'] = message[:50]
+        
+        return jsonify({'message': result, 'session_id': session_id})
     except Exception as e:
         logger.error(f"Error processing message: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
-def process_agent_message(text):
+@app.route('/chat/<session_id>', methods=['DELETE'])
+def delete_chat(session_id):
+    """Delete a chat session"""
+    if session_id not in chat_sessions:
+        return jsonify({'error': 'Session not found'}), 404
+    del chat_sessions[session_id]
+    return jsonify({'success': True})
+
+def process_agent_message(text, thread_id):
     # Import and run agent logic from agent.py
     from agent import get_postgres_saver
     from agent_tools import spotify_agent_tools
@@ -40,10 +97,10 @@ def process_agent_message(text):
     from langchain.agents.middleware import (ModelFallbackMiddleware, PIIMiddleware,)
     from spotify import launch_spotify_before_agent
 
-    result = launch_spotify_before_agent()
+    #result = launch_spotify_before_agent()
     
-    if result is None:
-        return
+    #if result is None:
+    #    return
     
     api_key = os.getenv("MISTRAL_API_KEY")
     model = ChatMistralAI(model="mistral-medium-latest", api_key=api_key, temperature=0.5)
@@ -90,7 +147,7 @@ def process_agent_message(text):
         Always respond with something - never return empty or blank messages."""
     )
     try:
-        thread_id = str(uuid.uuid4())
+        # Use session_id as thread_id for consistency
         config = {"configurable": {"thread_id": thread_id}}
         
         result = agent.invoke({"messages": [{"role": "user", "content": text}]}, config)
@@ -101,10 +158,7 @@ def process_agent_message(text):
         return str(result)
     except Exception as e:
         logger.error(f"Error processing message: {e}", exc_info=True)
-        print("Assistant: Sorry, I encountered an error. Starting a fresh conversation...")
-        thread_id = str(uuid.uuid4())
-        config = {"configurable": {"thread_id": thread_id}}
-        logger.info(f"Switched to new thread: {thread_id}")
+        return "Sorry, I encountered an error."
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
