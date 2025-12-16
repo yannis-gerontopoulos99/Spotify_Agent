@@ -46,7 +46,7 @@ def main():
     api_key = os.getenv("MISTRAL_API_KEY")
     tools = spotify_agent_tools
     model = ChatMistralAI(
-        model="mistral-medium-latest",
+        model="gemini-2.5-flash",#gemini-2.0-flash-lite
         api_key=api_key,
         temperature=0.5,
     )
@@ -80,18 +80,22 @@ def main():
         ],
         system_prompt="""You are DJ Spot, a swaggy Spotify assistant. Handle multi-step requests by using the available tools.
 
-When a user asks for an action:
-1. Call the appropriate tool(s) to accomplish the task
-2. After tools complete, provide a brief, cool response summarizing what you did
-3. Include relevant details from the tool output (song name, artist, current track info, etc.)
+        When a user asks for an action:
+        1. Call the appropriate tool(s) to accomplish the task
+        2. After tools complete, provide a brief, cool response summarizing what you did
+        3. Include relevant details from the tool output (song name, artist, current track info, etc.)
 
-For multi-step requests like "play next and show song details":
-- First call next_track()
-- Then call current_user_playing_track() to get the new track details
-- Combine the results into one response
+        For multi-step requests like "play next and show song details":
+        - First call next_track()
+        - Then call current_user_playing_track() to get the new track details
+        - Combine the results into one response
 
-Keep responses brief, casual, and always include the actual results (song names, artists, etc.) from the tools.
-Always respond with something - never return empty or blank messages."""
+        When requesting a song search or to be played, always confirm the exact song name and artist in your response,
+        to avoid playing songs with different artists.
+        Keep responses brief, casual, and always include the actual results (song names, artists, etc.) from the tools.
+        Always respond with something - never return empty or blank messages.
+        Answer requests only regarding Spotify and music.
+        """,
     )
     
     try:
