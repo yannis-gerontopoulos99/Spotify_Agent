@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 import random
+from datetime import datetime
 from logger import setup_logger
 
 logger = setup_logger()
@@ -1379,3 +1380,18 @@ def close_spotify():
         return "Spotify closed."
     except Exception as e:
         print(f"Error closing Spotify: {e}")
+
+# Get todays date
+def get_todays_date():
+    try:
+        # Get today's date
+        today = datetime.today()
+        
+        # Format the date (customize if needed)
+        formatted_date = today.strftime("%Y-%m-%d")
+        
+        return f"Today's date is {formatted_date}"
+    
+    except Exception as e:
+        logger.error(f"Error getting today's date: {e}")
+        return "Error occurred while calculating today's date"

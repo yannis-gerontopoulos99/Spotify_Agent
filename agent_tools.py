@@ -10,7 +10,7 @@ from spotify import (add_song_to_queue_by_song_name,
                     current_user_followed_artists, current_user_playlists, current_user_recently_played,
                     current_user_saved_albums, current_user_saved_tracks, current_user_top_artists_short_term,
                     current_user_top_tracks, queue, start_playback, volume, transfer_playback, devices,
-                    is_spotify_running, launch_spotify, close_spotify)
+                    is_spotify_running, launch_spotify, close_spotify, get_todays_date)
 
 from langchain_community.tools import DuckDuckGoSearchRun
 
@@ -231,6 +231,12 @@ def close_spotify_tool():
     result = close_spotify()
     return result if result else "Spotify closed"
 
+@tool("get_todays_date", return_direct=False)
+def get_todays_date_tool():
+    """Gets todays date"""
+    result = get_todays_date()
+    return result if result else "Todays date"
+
 spotify_agent_tools = [web_search_tool, add_song_to_queue_by_song_name_tool, add_song_to_queue_by_lyrics_tool,
                         start_playing_song_by_name_tool, start_playing_song_by_lyrics_tool,
                         start_playlist_by_name_tool, pause_music_tool,
@@ -243,6 +249,6 @@ spotify_agent_tools = [web_search_tool, add_song_to_queue_by_song_name_tool, add
                         format_artist_albums_tool, start_playing_artist_album_tool, 
                         start_playing_album_by_name_tool, start_playback_tool, volume_tool, 
                         transfer_playback_tool, devices_tool,
-                        launch_spotify_tool, close_spotify_tool,
+                        launch_spotify_tool, close_spotify_tool, #get_todays_date_tool
                         ]
 
