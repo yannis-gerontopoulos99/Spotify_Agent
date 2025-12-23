@@ -16,3 +16,5 @@ deepagents==0.2.4
 langchain_community
 sounddevice
 soundfile
+edge_tts
+supabase
