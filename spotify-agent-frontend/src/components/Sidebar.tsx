@@ -1,34 +1,92 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { Plus, MessageCircle, Trash2 } from 'lucide-react';
 import Link from 'next/link';
-import { Plus, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
-interface ChatSession {
-  id: string;
-  title: string;
-  created_at: string;
+interface ConversationSummary {
+  session_id: string;
+  first_message: string;
+  message_count: number;
+  last_message_time: string;
 }
 
-export default function Sidebar({ currentSessionId }: { currentSessionId?: string }) {
-  const [sessions, setSessions] = useState<ChatSession[]>([]);
+interface SidebarProps {
+  currentSessionId: string | null;
+  onNewChat: () => void;
+  onClose?: () => void;
+}
+
+export default function Sidebar({ currentSessionId, onNewChat, onClose }: SidebarProps) {
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
   useEffect(() => {
-    fetchSessions();
+    fetchAllConversations();
+    const interval = setInterval(fetchAllConversations, 30000);
+    return () => clearInterval(interval);
   }, []);
 
-  const fetchSessions = async () => {
+  const fetchAllConversations = async () => {
     try {
-      const response = await fetch('http://localhost:5000/chat/sessions');
+      setError(null);
+      const response = await fetch('http://localhost:5000/chat/all-conversations', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
       const data = await response.json();
-      setSessions(data.sessions || []);
-    } catch (error) {
-      console.error('Failed to fetch sessions:', error);
-    } finally {
+
+      if (Array.isArray(data)) {
+        setConversations(data);
+      } else {
+        setConversations([]);
+      }
       setLoading(false);
+    } catch (error) {
+      console.error('Failed to fetch conversations:', error);
+      setError('Failed to load conversation history');
+      setLoading(false);
+    }
+  };
+
+  const deleteConversation = async (sessionId: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!confirm('Are you sure you want to delete this conversation?')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`http://localhost:5000/chat/delete/${sessionId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete conversation');
+      }
+
+      setConversations(conversations.filter((c) => c.session_id !== sessionId));
+
+      if (sessionId === currentSessionId) {
+        router.push('/');
+      }
+    } catch (error) {
+      console.error('Failed to delete conversation:', error);
+      alert('Failed to delete conversation');
     }
   };
 
@@ -37,96 +95,102 @@ export default function Sidebar({ currentSessionId }: { currentSessionId?: strin
       const response = await fetch('http://localhost:5000/chat/new', {
         method: 'POST',
       });
-      const data = await response.json();
-      router.push(`/chat/${data.session_id}`);
-      fetchSessions();
-    } catch (error) {
-      console.error('Failed to create new chat:', error);
-    }
-  };
-
-  const handleDeleteChat = async (sessionId: string, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (confirm('Delete this chat?')) {
-      try {
-        await fetch(`http://localhost:5000/chat/${sessionId}`, {
-          method: 'DELETE',
-        });
-        setSessions(sessions.filter((s) => s.id !== sessionId));
-        if (currentSessionId === sessionId) {
-          router.push('/');
-        }
-      } catch (error) {
-        console.error('Failed to delete chat:', error);
+      if (!response.ok) {
+        throw new Error('Failed to create new chat');
       }
+      const data = await response.json();
+      onClose?.();
+      router.push(`/chat/${data.session_id}`);
+    } catch (error) {
+      console.error('Failed to create new session:', error);
+      alert('Failed to create new chat');
     }
   };
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-
-    if (date.toDateString() === today.toDateString()) {
-      return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-    } else if (date.toDateString() === yesterday.toDateString()) {
-      return 'Yesterday';
-    } else {
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    }
+  const handleConversationClick = () => {
+    onClose?.();
   };
 
   return (
-    <div className="w-64 bg-gray-900 text-white h-screen flex flex-col border-r border-gray-700">
-      {/* Header */}
-      <div className="p-4 border-b border-gray-700">
-        <button
-          onClick={handleNewChat}
-          className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg transition"
-        >
-          <Plus size={20} />
-          New Chat
-        </button>
+    <div className="w-64 bg-gray-800 text-white flex flex-col border-r border-gray-700 h-screen overflow-hidden">
+      {/* New Chat Button */}
+      <button
+        onClick={handleNewChat}
+        className="m-4 flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg transition"
+      >
+        <Plus size={20} />
+        New Chat
+      </button>
+
+      {/* Divider */}
+      <div className="px-4">
+        <div className="h-px bg-gray-700"></div>
       </div>
 
-      {/* Chat History */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-2">
+      {/* History Section */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="px-4 py-3">
+          <h2 className="text-xs uppercase tracking-wider text-gray-400 font-semibold">
+            Conversation History
+          </h2>
+        </div>
+
         {loading ? (
-          <div className="text-gray-400 text-sm p-2">Loading chats...</div>
-        ) : sessions.length === 0 ? (
-          <div className="text-gray-400 text-sm p-2">No chats yet</div>
+          <div className="px-4 py-2 text-sm text-gray-400">Loading conversations...</div>
+        ) : error ? (
+          <div className="px-4 py-2 text-sm text-red-400">{error}</div>
+        ) : conversations.length === 0 ? (
+          <div className="px-4 py-2 text-sm text-gray-400">No conversations yet</div>
         ) : (
-          sessions.map((session) => (
-            <Link
-              key={session.id}
-              href={`/chat/${session.id}`}
-              className={`block p-3 rounded-lg hover:bg-gray-800 transition group ${
-                currentSessionId === session.id ? 'bg-gray-800' : ''
-              }`}
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{session.title}</p>
-                  <p className="text-xs text-gray-500 mt-1">{formatDate(session.created_at)}</p>
+          <div className="space-y-1 px-2">
+            {conversations.map((conversation) => (
+              <Link
+                key={conversation.session_id}
+                href={`/chat/${conversation.session_id}`}
+                onClick={handleConversationClick}
+                className={`block p-3 rounded-lg transition group ${
+                  currentSessionId === conversation.session_id
+                    ? 'bg-green-600 text-white'
+                    : 'bg-gray-700 hover:bg-gray-600 text-gray-100'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <MessageCircle size={14} className="flex-shrink-0 mt-0.5" />
+                      <p className="font-semibold text-sm truncate">
+                        {conversation.first_message?.substring(0, 25) || 'Untitled'}...
+                      </p>
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1">
+                      {conversation.message_count} messages
+                    </p>
+                    <span className="text-xs text-gray-500">
+                      {new Date(conversation.last_message_time).toLocaleDateString()}
+                    </span>
+                  </div>
+                  <button
+                    onClick={(e) => deleteConversation(conversation.session_id, e)}
+                    className="opacity-0 group-hover:opacity-100 transition flex-shrink-0 mt-1"
+                  >
+                    <Trash2 size={16} className="text-red-400 hover:text-red-300" />
+                  </button>
                 </div>
-                <button
-                  onClick={(e) => handleDeleteChat(session.id, e)}
-                  className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-400 transition p-1"
-                  title="Delete chat"
-                >
-                  <Trash2 size={16} />
-                </button>
-              </div>
-            </Link>
-          ))
+              </Link>
+            ))}
+          </div>
         )}
       </div>
 
       {/* Footer */}
-      <div className="p-4 border-t border-gray-700 text-xs text-gray-400">
-        <p>DJ Spot</p>
+      <div className="border-t border-gray-700 p-4">
+        <button
+          onClick={fetchAllConversations}
+          disabled={loading}
+          className="w-full text-xs text-gray-400 hover:text-gray-200 transition disabled:opacity-50"
+        >
+          Refresh History
+        </button>
       </div>
     </div>
   );

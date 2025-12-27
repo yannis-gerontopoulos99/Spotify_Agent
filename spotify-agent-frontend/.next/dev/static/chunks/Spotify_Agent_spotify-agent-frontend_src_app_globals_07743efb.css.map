@@ -1,0 +1,6 @@
+{
+  "version": 3,
+  "sources": [],
+  "sections": [
+    {"offset": {"line": 1, "column": 0}, "map": {"version":3,"sources":["file:///home/yannis/Spotify_Agent/spotify-agent-frontend/src/app/globals.css"],"sourcesContent":["@tailwind base;\n@tailwind components;\n@tailwind utilities;\n\nbody {\n  margin: 0;\n  padding: 0;\n  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',\n    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Source Sans Pro',\n    'Helvetica Neue', sans-serif;\n}\n\n* {\n  box-sizing: border-box;\n}"],"names":[],"mappings":"AAAA;;AACA;;AACA;;AAEA;;;;;;AAQA"}}]
+}
