@@ -219,6 +219,12 @@ def devices_tool():
     result = devices()
     return result if result else "No devices found"
 
+@tool("is_spotify_running", return_direct=False)
+def is_spotify_running_tool():
+    """Checks if Spotify us running or not."""
+    result = is_spotify_running()
+    return result if result else "Checked Spotify's status "
+
 @tool("launch_spotify", return_direct=False)
 def launch_spotify_tool():
     """Launches the Spotify application if it isn't already running."""
