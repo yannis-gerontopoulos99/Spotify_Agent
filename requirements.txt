@@ -12,9 +12,13 @@ psycopg2-binary
 flask
 flask_cors
 google-genai
+groq
 deepagents==0.2.4
 langchain_community
 sounddevice
 soundfile
 edge_tts
 supabase
+psycopg[binary]
+ddgs
+gradio
