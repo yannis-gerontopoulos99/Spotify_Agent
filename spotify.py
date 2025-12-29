@@ -8,6 +8,8 @@ from spotipy.oauth2 import SpotifyOAuth
 import random
 from datetime import datetime
 from logger import setup_logger
+import psutil
+import platform
 
 logger = setup_logger()
 
@@ -1355,29 +1357,65 @@ def devices():
 
 # Checks if Spotify process is currently running on the system
 def is_spotify_running():
-    result = subprocess.run(["pgrep", "-f", "/snap/bin/spotify"], stdout=subprocess.PIPE)
-    return result.returncode == 0
+    try:
+        target = "spotify"
+
+        for process in psutil.process_iter(['name']):
+            
+            try:
+                if target in process.info['name'].lower():
+                    return True
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                continue    
+        return False
+    except Exception as e:
+        logger.error(f"Error checking if device is running: {e}")
+        return f"Error checking running device: {e}"
 
 # Launches Spotify application if it's not already running (detached from script process)
 def launch_spotify():
-    if is_spotify_running():
-        print("Spotify is already running.")
-        return None
+    current_os = platform.system()
+    target = "spotify"
+
     try:
-        process = subprocess.Popen(["/snap/bin/spotify"],
-                                    stdout=subprocess.DEVNULL,
-                                    stderr=subprocess.DEVNULL,
-                                    preexec_fn=os.setpgrp  # detaches Spotify from the script
-                                    )
-        return "Spotify launched."
+        if current_os == "Windows":
+            # On Windows, 'start' can open apps by name
+            subprocess.run(["start", f"{target}.exe"], shell=True)
+            return "Spotify Opened"
+        elif current_os == "Darwin":
+            # On Mac, 'open -a' opens applications by name
+            subprocess.run(["open", "-a", target])
+            return "Spotify Opened"
+        elif current_os == "Linux":
+            # On Linux, 'xdg-open' is the standard way to open apps/files
+            subprocess.run(["xdg-open", target])
+            return "Spotify Opened"
+        
     except Exception as e:
         print(f"Error opening Spotify: {e}")
 
 # Closes Spotify application gracefully using pkill
 def close_spotify():
+    current_os = platform.system()
+    target = "spotify"
+    
     try:
-        subprocess.run(["pkill", "-f", "spotify"], check=False)
-        return "Spotify closed."
+        if current_os == "Windows":
+            # /F forces the process to close, /IM specifies the image name
+            # We add .exe for Windows just in case
+            name = target if target.endswith(".exe") else f"{target}.exe"
+            subprocess.run(["taskkill", "/F", "/IM", name], check=True, capture_output=True)
+            return("Spotify Closed")
+        elif current_os == "Darwin":  # macOS
+            # 'pkill' is standard on Mac to terminate by name
+            subprocess.run(["pkill", "-x", target], check=True)
+            return("Spotify Closed")
+        elif current_os == "Linux":
+            # 'pkill' or 'killall' works on most Linux distros
+            subprocess.run(["pkill", target], check=True)
+            return("Spotify Closed")
+        print(f"Successfully closed {target}")
+
     except Exception as e:
         print(f"Error closing Spotify: {e}")
 
