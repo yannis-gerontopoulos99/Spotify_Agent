@@ -78,9 +78,19 @@ def shuffle_tool(state: bool):
 
 @tool("seek_track", return_direct=False)
 def seek_track_tool(position_ms: int):
-    """Seeks to a specific position in the currently playing track."""
+    """
+    Seeks to a specific position in the currently playing track. 
+    Input should be the position in milliseconds (e.g., 1 second = 1000ms).
+    """
+    try:
+        position_ms = int(position_ms)
+    except (ValueError, TypeError):
+        return "Error: The position must be a valid number of milliseconds."
     result = seek_track(position_ms)
-    return result if result else f"Seeked to {position_ms}ms"
+    
+    if not result:
+        return "Failed to seek track. Please ensure Spotify is active and a song is playing."
+    return result
 
 @tool("start_playing_artist", return_direct=False)
 def start_playing_artist_tool(artist_name: str):
