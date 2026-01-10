@@ -638,25 +638,24 @@ def shuffle(state: bool):
 # Seeks to a specific position in the current track (in milliseconds)
 def seek_track(position_ms: int):
     try:
-        # Check active device for app launch scenario
         devices_response = sp.devices()
         devices = devices_response.get('devices', [])
-        if not devices:
-            return "No devices found."
         
-        devices = sp.devices().get("devices", [])
         if not devices:
-            print("No devices found.")
-            return None
-        # Return the ID of the first device
-        device_id = devices[0].get("id")
-        
-        if position_ms:
-            sp.seek_track(device_id, position_ms)
-            return f"Track moved to {position_ms} ms"
+            return "No active Spotify devices found. Please open Spotify on a device."
+
+        # Pick the active device, or the first one available
+        active_devices = [d for d in devices if d.get('is_active')]
+        device_id = active_devices[0].get('id') if active_devices else devices[0].get('id')
+
+        # Execute seek
+        sp.seek_track(position_ms=position_ms, device_id=device_id)
+        return f"Success: Track moved to {position_ms} ms."
+
     except Exception as e:
         logger.error(f"Error moving track: {e}")
-        return(f"Error moving track to {position_ms} ms")
+        # Return the actual error so the Agent knows it failed
+        return f"Failed to move track: {str(e)}"
 
 # Fetches and returns the current Spotify user's profile information
 def current_user():
