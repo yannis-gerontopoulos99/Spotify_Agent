@@ -43,16 +43,20 @@ async def upload_to_supabase(audio_path, thread_id, turn_index): # Add turn_inde
         return None
     
 
-async def process_interaction(message, history):
+async def process_interaction(message, history, thread_id_state):
     user_text = message.get("text", "").strip()
     user_files = message.get("files", [])
+    
+    # Persist thread_id across the entire conversation
+    if thread_id_state is None or thread_id_state == "":
+        thread_id = f"sess_{uuid.uuid4().hex[:6]}"
+    else:
+        thread_id = thread_id_state
     
     # This determines if this is turn 0, 1, 2, etc.
     current_turn = len(history) // 2
     is_voice_input = len(user_files) > 0
 
-    thread_id = f"sess_{uuid.uuid4().hex[:6]}" 
-    
     audio_path = None
     user_audio_url = None
     assistant_audio_url = None
@@ -78,8 +82,12 @@ async def process_interaction(message, history):
             # 3. LOG USER DATA
             await log_to_postgres(thread_id, "user", user_text, user_audio_url)
 
-            history.append({"role": "user", "content": gr.Audio(value=audio_path)})
-            history.append({"role": "user", "content": f"{user_text}"})
+            # Add text and audio player (HTML) for browser-side playback
+            if user_audio_url:
+                audio_html = f"<audio controls controlsList='nofullscreen' style='width:100%; margin-bottom:10px;'><source src='{user_audio_url}' type='audio/mpeg'></audio>"
+                history.append({"role": "user", "content": f"{audio_html}\n{user_text}"})
+            else:
+                history.append({"role": "user", "content": user_text})
         else:
             history.append({"role": "user", "content": user_text})
 
@@ -119,10 +127,13 @@ async def process_interaction(message, history):
                 print(f"❌ Error generating/uploading assistant audio: {e}")
             
             await log_to_postgres(thread_id, "assistant", response_text, assistant_audio_url)
-            history.append({"role": "assistant", "content": response_text})
             
+            # Use HTML audio player for responsive browser-side playback
             if assistant_audio_url:
-                history.append({"role": "assistant", "content": gr.Audio(value=assistant_audio_url, autoplay=True)})
+                audio_html = f"<audio controls autoplay controlsList='nofullscreen' style='width:100%; margin-top:10px;'><source src='{assistant_audio_url}' type='audio/mpeg'></audio>"
+                history.append({"role": "assistant", "content": f"{response_text}\n\n{audio_html}"})
+            else:
+                history.append({"role": "assistant", "content": response_text})
         else:
             history.append({"role": "assistant", "content": response_text})
 
@@ -130,12 +141,16 @@ async def process_interaction(message, history):
         print(f"Error in process_interaction: {e}")
         history.append({"role": "assistant", "content": f"❌ Error: {str(e)}"})
 
-    return history
+    return history, thread_id
 
 
 # --- UI Definition remains largely the same ---
 with gr.Blocks() as demo:
     gr.Markdown("<h1 style='text-align: center; color: black;'>DJ Spot 🎧</h1>")
+    
+    # Persist thread_id across the entire conversation session
+    thread_id_state = gr.State("")
+    
     chatbot = gr.Chatbot(
         value=[{"role": "assistant", "content": "👋 Hello I am your friendly neighborhood DJ Spot!"}],
         height=600,
@@ -147,18 +162,25 @@ with gr.Blocks() as demo:
         show_label=False
     )
 
-    chat_input.submit(process_interaction, [chat_input, chatbot], [chatbot])
+    chat_input.submit(process_interaction, [chat_input, chatbot, thread_id_state], [chatbot, thread_id_state])
     chat_input.submit(lambda: None, None, chat_input)
-
-# JS and launch code...
-if __name__ == "__main__":
-    launch_spotify_before_agent()
-    demo.launch(theme=gr.themes.Monochrome())
 
 # Define the JavaScript logic
 shortcut_js = """
 (function() {
     console.log("🎧 DJ Spot: Controller Active");
+
+    // Hide volume slider on all audio elements
+    const hideVolumeControl = () => {
+        const style = document.createElement('style');
+        style.textContent = `
+            audio::-webkit-media-controls-volume-slider { display: none; }
+            audio::-webkit-media-controls-volume-slider-container { display: none; }
+            audio::-moz-media-controls-volume-control { display: none; }
+        `;
+        document.head.appendChild(style);
+    };
+    hideVolumeControl();
 
     const handleKey = (e) => {
         const key = e.key.toLowerCase();
@@ -171,8 +193,10 @@ shortcut_js = """
             const micBtn = document.querySelector('button[data-testid="microphone-button"]');
             
             if (stopBtn) {
+                console.log("⏹️ Stopping recording...");
                 stopBtn.click();
             } else if (micBtn) {
+                console.log("🎤 Starting recording...");
                 if (inputTextArea) inputTextArea.focus();
                 micBtn.click();
             }
@@ -181,7 +205,7 @@ shortcut_js = """
         // 2. Alt+R: Delete Recording
         if (e.altKey && key === 'r') {
             e.preventDefault();
-            const cancelBtn = document.querySelector('button.cancel-button[aria-label="Clear audio"]');
+            const cancelBtn = document.querySelector('button[aria-label="Clear audio"]');
             if (cancelBtn) {
                 cancelBtn.click();
                 console.log("🗑️ Recording Deleted.");
@@ -190,42 +214,37 @@ shortcut_js = """
 
         // 3. Enter: Send Audio or Text
         if (e.key === 'Enter' && !e.shiftKey) {
-            // Find the send button - Gradio often uses 'Submit' or 'Send' labels
-            const sendBtn = document.querySelector('button[aria-label="Send"], button.send-button, button.primary-button');
+            const sendBtn = document.querySelector('button[aria-label="Send"], button.submit-button, button[type="submit"]');
             
             // Check if there's content: either text in the box or a waveform on screen
             const hasText = inputTextArea && inputTextArea.value.trim().length > 0;
-            const hasAudio = document.querySelector('.cancel-button[aria-label="Clear audio"]') !== null;
+            const hasAudio = document.querySelector('button[aria-label="Clear audio"]') !== null;
 
             if ((hasText || hasAudio) && sendBtn) {
-                // Prevent default Enter behavior (new line)
                 e.preventDefault();
                 e.stopPropagation();
                 
                 console.log("📤 Sending...");
-                
-                // Clicking the button directly is the most reliable way in Gradio
                 sendBtn.click();
                 
                 // Clear focus and refocus to reset the UI state
-                inputTextArea.blur();
-                setTimeout(() => inputTextArea.focus(), 50);
+                if (inputTextArea) {
+                    inputTextArea.blur();
+                    setTimeout(() => inputTextArea.focus(), 50);
+                }
             }
         }
     };
 
     // Use 'keydown' with capture (true) to intercept Enter before Gradio handles it
     window.addEventListener('keydown', handleKey, true);
+    console.log("✅ Keyboard shortcuts initialized");
 })();
 """
 
 if __name__ == "__main__":
-
     launch_spotify_before_agent()
-
     demo.launch(
         js=shortcut_js,
         theme=gr.themes.Monochrome(),
-
-
     ) 
