@@ -7,8 +7,10 @@ from supabase import create_client
 import io
 from dotenv import load_dotenv
 import psycopg2
-from psycopg2.extras import RealDictCursor
-import json
+from datetime import datetime
+from psycopg.rows import dict_row
+from langgraph.checkpoint.postgres import PostgresSaver
+from psycopg_pool import ConnectionPool
 
 load_dotenv()
 
@@ -22,165 +24,93 @@ from spotify import launch_spotify_before_agent
 
 agent = get_agent()
 
+pool = ConnectionPool(conninfo=DB_URI, min_size=1, max_size=10)
+
 # --- DATABASE FUNCTIONS FOR SESSION MANAGEMENT ---
 def get_db_connection():
     """Create a database connection from DATABASE_URL"""
     return psycopg2.connect(DB_URI)
 
 def fetch_all_sessions():
-    """Fetch all session IDs from the langchain checkpoints table, ordered by most recent timestamp"""
+    """Fetch unique thread_ids with their latest timestamp from the checkpoints table."""
     try:
-        conn = get_db_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        # Query to get distinct thread_ids with their most recent checkpoint
-        cur.execute("""
-            SELECT DISTINCT ON (thread_id) thread_id, checkpoint
-            FROM checkpoints 
-            WHERE thread_id IS NOT NULL 
-            ORDER BY (checkpoint->>'ts') DESC
-            LIMIT 5
-        """)
-        sessions = cur.fetchall()
-        cur.close()
-        conn.close()
-        
-        # Sort sessions by timestamp in descending order (most recent first)
-        session_list = []
-        session_data = []
-        
-        for session in sessions:
-            try:
-                checkpoint_data = session['checkpoint']
-                if isinstance(checkpoint_data, str):
-                    checkpoint_data = json.loads(checkpoint_data)
+        # 1. Borrow a connection from the pool
+        with pool.connection() as conn:
+            # Use dict_row so we can access columns by name: row['thread_id']
+            with conn.cursor(row_factory=dict_row) as cur:
                 
-                ts = checkpoint_data.get('ts', '1970-01-01T00:00:00+00:00')
-                session_data.append((session['thread_id'], ts))
-            except Exception as e:
-                print(f"Error parsing session timestamp: {e}")
-                session_data.append((session['thread_id'], '1970-01-01T00:00:00+00:00'))
+                # 2. SQL to get the absolute LATEST checkpoint for each unique thread
+                # We sort by thread_id first for DISTINCT ON, then by ts for the latest record
+                cur.execute("""
+                    SELECT DISTINCT ON (thread_id) 
+                        thread_id, 
+                        checkpoint->>'ts' as ts
+                    FROM checkpoints 
+                    WHERE thread_id IS NOT NULL 
+                    ORDER BY thread_id, checkpoint->>'ts' DESC
+                """)
+                
+                rows = cur.fetchall()
+
+        # 3. Process the results
+        session_data = []
+        for row in rows:
+            raw_ts = row['ts']
+            thread_id = row['thread_id']
+            
+            # Format the timestamp for the UI (e.g., "Jan 24, 21:13")
+            try:
+                dt = datetime.fromisoformat(raw_ts.replace('Z', '+00:00'))
+                readable_date = dt.strftime("%b %d, %H:%M")
+            except:
+                readable_date = "Unknown Date"
+                
+            session_data.append({
+                "thread_id": thread_id,
+                "timestamp": readable_date,
+                "raw_ts": raw_ts # Keep raw for sorting
+            })
+
+        # 4. Final sort: most recent chat at the top
+        session_data.sort(key=lambda x: x['raw_ts'], reverse=True)
         
-        # Sort by timestamp descending (most recent first)
-        session_data.sort(key=lambda x: x[1], reverse=True)
-        session_list = [s[0] for s in session_data]
-        
-        return session_list if session_list else ["New Session"]
+        return session_data if session_data else [{"thread_id": "New Session", "timestamp": ""}]
+
     except Exception as e:
         print(f"❌ Error fetching sessions: {e}")
-        return ["New Session"]
+        return [{"thread_id": "New Session", "timestamp": ""}]
 
-def load_session_history(thread_id):
-    """Load chat history for a specific session from LangGraph checkpoints"""
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+def load_session_history(thread_id: str):
+    with pool.connection() as conn:
+        saver = PostgresSaver(conn)
+        config = {"configurable": {"thread_id": thread_id}}
         
-        # Query to get all checkpoints for the thread, ordered by timestamp
-        cur.execute("""
-            SELECT checkpoint FROM checkpoints 
-            WHERE thread_id = %s 
-            ORDER BY (checkpoint->>'ts') ASC
-        """, (thread_id,))
+        # This might return a CheckpointTuple OR a dict
+        result = saver.get(config)
         
-        checkpoints = cur.fetchall()
-        cur.close()
-        conn.close()
+        if not result:
+            return []
+
+        # FIX: Check if result is a dictionary or an object with a .checkpoint attr
+        if isinstance(result, dict):
+            checkpoint_data = result
+        else:
+            checkpoint_data = result.checkpoint
+
+        # The actual state data lives in 'channel_values'
+        channel_values = checkpoint_data.get("channel_values", {})
+        
+        # Look for your messages (usually 'messages', but check your State definition)
+        raw_messages = channel_values.get("messages", [])
         
         history = []
-        seen_messages = set()  # Track messages we've already added to avoid duplicates
-        
-        print(f"🔍 Loading {len(checkpoints)} checkpoints for thread {thread_id}")
-        
-        # Parse the checkpoint data to extract messages from channel_values
-        for idx, checkpoint_row in enumerate(checkpoints):
-            try:
-                # The checkpoint column might be already parsed as dict or a JSON string
-                checkpoint_data = checkpoint_row['checkpoint']
-                
-                # If it's a string, parse it; if it's already a dict, use it as is
-                if isinstance(checkpoint_data, str):
-                    checkpoint_data = json.loads(checkpoint_data)
-                elif not isinstance(checkpoint_data, dict):
-                    continue
-                
-                print(f"\n📋 Checkpoint {idx}: Keys = {list(checkpoint_data.keys())}")
-                
-                # Extract messages from channel_values
-                if 'channel_values' in checkpoint_data:
-                    channel_values = checkpoint_data['channel_values']
-                    print(f"   channel_values keys: {list(channel_values.keys())}")
-                    
-                    # Try different locations where messages might be stored
-                    messages = None
-                    
-                    # Try 'messages' key first
-                    if 'messages' in channel_values:
-                        messages = channel_values['messages']
-                        print(f"   Found 'messages' key with {len(messages) if isinstance(messages, list) else 'non-list'} items")
-                    
-                    # Try other common keys
-                    for key in ['__input__', '__output__', 'history', 'chat']:
-                        if key in channel_values and messages is None:
-                            potential_messages = channel_values[key]
-                            print(f"   Checking '{key}': {type(potential_messages)}")
-                            if isinstance(potential_messages, list):
-                                messages = potential_messages
-                    
-                    if messages and isinstance(messages, list) and len(messages) > 0:
-                        print(f"   Processing {len(messages)} messages...")
-                        for msg in messages:
-                            try:
-                                # Extract content and type
-                                content = None
-                                msg_type = None
-                                
-                                if isinstance(msg, dict):
-                                    content = msg.get('content', '')
-                                    msg_type = msg.get('type', '')
-                                    print(f"     Dict message: type={msg_type}, content_len={len(str(content))}")
-                                elif hasattr(msg, 'content') and hasattr(msg, 'type'):
-                                    content = msg.content
-                                    msg_type = msg.type
-                                    print(f"     Object message: type={msg_type}, content_len={len(str(content))}")
-                                
-                                if not content or not msg_type:
-                                    continue
-                                
-                                msg_id = f"{msg_type}_{str(content)[:50]}"  # Simple dedup key
-                                
-                                # Skip if we've seen this message before
-                                if msg_id in seen_messages:
-                                    continue
-                                seen_messages.add(msg_id)
-                                
-                                # Determine role from type
-                                if msg_type == 'human':
-                                    role = 'user'
-                                elif msg_type == 'ai':
-                                    role = 'assistant'
-                                else:
-                                    continue
-                                
-                                history.append({"role": role, "content": str(content)})
-                                print(f"     ✅ Added {role} message: {str(content)[:60]}...")
-                                
-                            except Exception as e:
-                                print(f"     Error parsing individual message: {e}")
-                                continue
-                    else:
-                        print(f"   No messages found in this checkpoint")
-                else:
-                    print(f"   No 'channel_values' in checkpoint")
-                    
-            except Exception as e:
-                print(f"Error parsing checkpoint {idx}: {e}")
-                continue
-        
-        print(f"\n📊 Total messages loaded: {len(history)}")
-        return history if history else []
-    except Exception as e:
-        print(f"❌ Error loading session history: {e}")
-        return []
+        for msg in raw_messages:
+            # Standard LangChain message mapping
+            role = "user" if msg.type == "human" else "assistant"
+            history.append({"role": role, "content": msg.content})
+
+        #print(history)    
+        return history
 
 async def upload_to_supabase(audio_path, thread_id, turn_index): # Add turn_index here   
     try:
@@ -283,7 +213,7 @@ async def process_interaction(message, history, thread_id_state):
                 audio_buffer = io.BytesIO()
                 
                 async for chunk in communicate.stream():
-                    if chunk["type"] == "audio":
+                    if chunk["type"] == "audio" and "data" in chunk:
                         audio_buffer.write(chunk["data"])
                 
                 supabase.storage.from_("agent_audio_logs").upload(
@@ -319,7 +249,7 @@ async def process_interaction(message, history, thread_id_state):
 with gr.Blocks() as demo:
 
     with gr.Sidebar():
-        gr.Markdown("## 🎧 DJ Spot Sessions")
+        gr.Markdown("## 🎧 DJ Spot History")
         
         # Fetch available sessions on startup
         available_sessions = fetch_all_sessions()
@@ -339,10 +269,16 @@ with gr.Blocks() as demo:
             if selected_session == "New Session":
                 return [{"role": "assistant", "content": "👋 Hello I am your friendly neighborhood DJ Spot!"}], ""
             else:
-                history = load_session_history(selected_session)
+                # Extract thread_id if selected_session is a dict
+                if isinstance(selected_session, dict):
+                    thread_id = selected_session.get("thread_id")
+                else:
+                    thread_id = selected_session
+                
+                history = load_session_history(thread_id)
                 if not history:
                     history = [{"role": "assistant", "content": "👋 Hello I am your friendly neighborhood DJ Spot!"}]
-                return history, selected_session
+                return history, thread_id
         
         new_btn = gr.Button("➕ Start New Mix", variant="primary")
 
