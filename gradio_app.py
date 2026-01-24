@@ -6,10 +6,13 @@ from groq import Groq
 from supabase import create_client
 import io
 from dotenv import load_dotenv
+import psycopg2
+from psycopg2.extras import RealDictCursor
+import json
 
 load_dotenv()
 
-#DB_URI = os.getenv("DATABASE_URL")
+DB_URI = os.getenv("DATABASE_URL")
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_API_KEY"))
 groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
@@ -18,6 +21,166 @@ from agent_configs import (get_agent, log_to_postgres)
 from spotify import launch_spotify_before_agent
 
 agent = get_agent()
+
+# --- DATABASE FUNCTIONS FOR SESSION MANAGEMENT ---
+def get_db_connection():
+    """Create a database connection from DATABASE_URL"""
+    return psycopg2.connect(DB_URI)
+
+def fetch_all_sessions():
+    """Fetch all session IDs from the langchain checkpoints table, ordered by most recent timestamp"""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        # Query to get distinct thread_ids with their most recent checkpoint
+        cur.execute("""
+            SELECT DISTINCT ON (thread_id) thread_id, checkpoint
+            FROM checkpoints 
+            WHERE thread_id IS NOT NULL 
+            ORDER BY (checkpoint->>'ts') DESC
+            LIMIT 5
+        """)
+        sessions = cur.fetchall()
+        cur.close()
+        conn.close()
+        
+        # Sort sessions by timestamp in descending order (most recent first)
+        session_list = []
+        session_data = []
+        
+        for session in sessions:
+            try:
+                checkpoint_data = session['checkpoint']
+                if isinstance(checkpoint_data, str):
+                    checkpoint_data = json.loads(checkpoint_data)
+                
+                ts = checkpoint_data.get('ts', '1970-01-01T00:00:00+00:00')
+                session_data.append((session['thread_id'], ts))
+            except Exception as e:
+                print(f"Error parsing session timestamp: {e}")
+                session_data.append((session['thread_id'], '1970-01-01T00:00:00+00:00'))
+        
+        # Sort by timestamp descending (most recent first)
+        session_data.sort(key=lambda x: x[1], reverse=True)
+        session_list = [s[0] for s in session_data]
+        
+        return session_list if session_list else ["New Session"]
+    except Exception as e:
+        print(f"❌ Error fetching sessions: {e}")
+        return ["New Session"]
+
+def load_session_history(thread_id):
+    """Load chat history for a specific session from LangGraph checkpoints"""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        
+        # Query to get all checkpoints for the thread, ordered by timestamp
+        cur.execute("""
+            SELECT checkpoint FROM checkpoints 
+            WHERE thread_id = %s 
+            ORDER BY (checkpoint->>'ts') ASC
+        """, (thread_id,))
+        
+        checkpoints = cur.fetchall()
+        cur.close()
+        conn.close()
+        
+        history = []
+        seen_messages = set()  # Track messages we've already added to avoid duplicates
+        
+        print(f"🔍 Loading {len(checkpoints)} checkpoints for thread {thread_id}")
+        
+        # Parse the checkpoint data to extract messages from channel_values
+        for idx, checkpoint_row in enumerate(checkpoints):
+            try:
+                # The checkpoint column might be already parsed as dict or a JSON string
+                checkpoint_data = checkpoint_row['checkpoint']
+                
+                # If it's a string, parse it; if it's already a dict, use it as is
+                if isinstance(checkpoint_data, str):
+                    checkpoint_data = json.loads(checkpoint_data)
+                elif not isinstance(checkpoint_data, dict):
+                    continue
+                
+                print(f"\n📋 Checkpoint {idx}: Keys = {list(checkpoint_data.keys())}")
+                
+                # Extract messages from channel_values
+                if 'channel_values' in checkpoint_data:
+                    channel_values = checkpoint_data['channel_values']
+                    print(f"   channel_values keys: {list(channel_values.keys())}")
+                    
+                    # Try different locations where messages might be stored
+                    messages = None
+                    
+                    # Try 'messages' key first
+                    if 'messages' in channel_values:
+                        messages = channel_values['messages']
+                        print(f"   Found 'messages' key with {len(messages) if isinstance(messages, list) else 'non-list'} items")
+                    
+                    # Try other common keys
+                    for key in ['__input__', '__output__', 'history', 'chat']:
+                        if key in channel_values and messages is None:
+                            potential_messages = channel_values[key]
+                            print(f"   Checking '{key}': {type(potential_messages)}")
+                            if isinstance(potential_messages, list):
+                                messages = potential_messages
+                    
+                    if messages and isinstance(messages, list) and len(messages) > 0:
+                        print(f"   Processing {len(messages)} messages...")
+                        for msg in messages:
+                            try:
+                                # Extract content and type
+                                content = None
+                                msg_type = None
+                                
+                                if isinstance(msg, dict):
+                                    content = msg.get('content', '')
+                                    msg_type = msg.get('type', '')
+                                    print(f"     Dict message: type={msg_type}, content_len={len(str(content))}")
+                                elif hasattr(msg, 'content') and hasattr(msg, 'type'):
+                                    content = msg.content
+                                    msg_type = msg.type
+                                    print(f"     Object message: type={msg_type}, content_len={len(str(content))}")
+                                
+                                if not content or not msg_type:
+                                    continue
+                                
+                                msg_id = f"{msg_type}_{str(content)[:50]}"  # Simple dedup key
+                                
+                                # Skip if we've seen this message before
+                                if msg_id in seen_messages:
+                                    continue
+                                seen_messages.add(msg_id)
+                                
+                                # Determine role from type
+                                if msg_type == 'human':
+                                    role = 'user'
+                                elif msg_type == 'ai':
+                                    role = 'assistant'
+                                else:
+                                    continue
+                                
+                                history.append({"role": role, "content": str(content)})
+                                print(f"     ✅ Added {role} message: {str(content)[:60]}...")
+                                
+                            except Exception as e:
+                                print(f"     Error parsing individual message: {e}")
+                                continue
+                    else:
+                        print(f"   No messages found in this checkpoint")
+                else:
+                    print(f"   No 'channel_values' in checkpoint")
+                    
+            except Exception as e:
+                print(f"Error parsing checkpoint {idx}: {e}")
+                continue
+        
+        print(f"\n📊 Total messages loaded: {len(history)}")
+        return history if history else []
+    except Exception as e:
+        print(f"❌ Error loading session history: {e}")
+        return []
 
 async def upload_to_supabase(audio_path, thread_id, turn_index): # Add turn_index here   
     try:
@@ -44,8 +207,16 @@ async def upload_to_supabase(audio_path, thread_id, turn_index): # Add turn_inde
     
 
 async def process_interaction(message, history, thread_id_state):
+    # Guard against None message (empty send or incomplete recording)
+    if message is None:
+        return history, thread_id_state
+    
     user_text = message.get("text", "").strip()
     user_files = message.get("files", [])
+    
+    # Prevent sending empty messages (no text and no audio files)
+    if not user_text and not user_files:
+        return history, thread_id_state
     
     # Persist thread_id across the entire conversation
     if thread_id_state is None or thread_id_state == "":
@@ -146,6 +317,35 @@ async def process_interaction(message, history, thread_id_state):
 
 # --- UI Definition remains largely the same ---
 with gr.Blocks() as demo:
+
+    with gr.Sidebar():
+        gr.Markdown("## 🎧 DJ Spot Sessions")
+        
+        # Fetch available sessions on startup
+        available_sessions = fetch_all_sessions()
+        
+        session_list = gr.Radio(
+            choices=available_sessions, 
+            value="New Session", 
+            label="Recent Chats"
+        )
+        
+        def start_new_session():
+            """Create a fresh session"""
+            return "New Session", [{"role": "assistant", "content": "👋 Hello I am your friendly neighborhood DJ Spot!"}], ""
+        
+        def load_selected_session(selected_session):
+            """Load a selected session's history"""
+            if selected_session == "New Session":
+                return [{"role": "assistant", "content": "👋 Hello I am your friendly neighborhood DJ Spot!"}], ""
+            else:
+                history = load_session_history(selected_session)
+                if not history:
+                    history = [{"role": "assistant", "content": "👋 Hello I am your friendly neighborhood DJ Spot!"}]
+                return history, selected_session
+        
+        new_btn = gr.Button("➕ Start New Mix", variant="primary")
+
     gr.Markdown("<h1 style='text-align: center; color: black;'>DJ Spot 🎧</h1>")
     
     # Persist thread_id across the entire conversation session
@@ -160,6 +360,19 @@ with gr.Blocks() as demo:
         placeholder="Type a message or use the mic (auto-sends)...",
         sources=["microphone"],
         show_label=False
+    )
+
+    # Wire up button to start new session
+    new_btn.click(
+        start_new_session,
+        outputs=[session_list, chatbot, thread_id_state]
+    )
+    
+    # Wire up session selection to load that session
+    session_list.change(
+        load_selected_session,
+        inputs=[session_list],
+        outputs=[chatbot, thread_id_state]
     )
 
     chat_input.submit(process_interaction, [chat_input, chatbot, thread_id_state], [chatbot, thread_id_state])
