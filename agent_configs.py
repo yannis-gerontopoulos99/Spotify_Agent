@@ -25,11 +25,19 @@ vertexai.init(
 
 DB_URI = os.getenv("DATABASE_URL")
 
+# Create a global pool once
+# min_size=1 keeps a connection ready, max_size=3 handles concurrent Gradio users
+pool = ConnectionPool(conninfo=DB_URI + "?application_name=DJ_Spot_App", 
+                      kwargs={"options": "-c statement_timeout=30000", # 30 seconds in milliseconds
+                              "row_factory": dict_row, # Good for consistency
+                    }, min_size=0, #Use 0 so connections close when no one is using the app 
+                    max_size=3,
+                    open=True # Ensures pool starts immediately
+                    )
+
 # AGENT SETUP WITH MIDDLEWARE
 def get_agent():
-    conn_kwargs = {"autocommit": True, "row_factory": dict_row}
-    conn = psycopg.connect(DB_URI, **conn_kwargs)
-    checkpointer = PostgresSaver(conn)
+    checkpointer = PostgresSaver(pool)
 
     # Define Models
     primary_model = ChatMistralAI(
@@ -84,10 +92,6 @@ def get_agent():
             """
         )
     )
-
-# Create a global pool (put this outside your functions)
-# min_size=1 keeps a connection ready, max_size=10 handles concurrent Gradio users
-pool = ConnectionPool(conninfo=DB_URI, min_size=1, max_size=10)
 
 async def log_to_postgres(thread_id, role, transcript, audio_url=None):
     """Logs conversation to Postgres using a connection pool to avoid 'too many connections' error."""

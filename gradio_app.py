@@ -10,7 +10,6 @@ import psycopg2
 from datetime import datetime
 from psycopg.rows import dict_row
 from langgraph.checkpoint.postgres import PostgresSaver
-from psycopg_pool import ConnectionPool
 
 load_dotenv()
 
@@ -19,17 +18,12 @@ supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_API_KEY"
 groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 # --- NEW: Import your cloud utilities from your existing agent logic ---
-from agent_configs import (get_agent, log_to_postgres)
+from agent_configs import (get_agent, log_to_postgres, pool)
 from spotify import launch_spotify_before_agent
 
 agent = get_agent()
 
-pool = ConnectionPool(conninfo=DB_URI, min_size=1, max_size=10)
-
 # --- DATABASE FUNCTIONS FOR SESSION MANAGEMENT ---
-def get_db_connection():
-    """Create a database connection from DATABASE_URL"""
-    return psycopg2.connect(DB_URI)
 
 def fetch_all_sessions():
     """Fetch unique thread_ids with their latest timestamp from the checkpoints table."""
@@ -393,7 +387,15 @@ shortcut_js = """
 
 if __name__ == "__main__":
     launch_spotify_before_agent()
-    demo.launch(
-        js=shortcut_js,
-        theme=gr.themes.Monochrome(),
-    ) 
+    try:
+        # Launch the app
+        demo.queue(default_concurrency_limit=2) # Only allow 2 agent users at a time
+        demo.launch(
+            js=shortcut_js,
+            theme=gr.themes.Monochrome(),
+        )
+    except KeyboardInterrupt:
+        print("Keyboard interrupt detected..")
+    finally:
+        pool.close()
+        print("Safe shutdown complete")
